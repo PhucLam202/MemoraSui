@@ -1,0 +1,12 @@
+{
+  "name": "sui-portfolio-assistant",
+  "private": true,
+  "packageManager": "pnpm@10.7.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter @sui-portfolio/frontend --filter @sui-portfolio/backend dev",
+    "dev:all": "pnpm -r --parallel --filter @sui-portfolio/frontend --filter @sui-portfolio/backend --filter @sui-portfolio/worker dev",
+    "build": "pnpm -r --filter @sui-portfolio/shared --filter @sui-portfolio/backend --filter @sui-portfolio/frontend build",
+    "lint": "pnpm -r --filter @sui-portfolio/shared --filter @sui-portfolio/backend --filter @sui-portfolio/frontend lint",
+    "typecheck": "pnpm -r --filter @sui-portfolio/shared --filter @sui-portfolio/backend --filter @sui-portfolio/frontend --filter @sui-portfolio/worker typecheck"
+  }
+}

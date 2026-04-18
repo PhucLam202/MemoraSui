@@ -1,0 +1,14 @@
+node_modules
+.pnpm-store
+.next
+dist
+coverage
+.turbo
+.DS_Store
+*.log
+*.tsbuildinfo
+.env
+.env.local
+!frontend/.env.local
+!backend/.env
+!worker/.env

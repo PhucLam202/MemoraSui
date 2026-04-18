@@ -1,0 +1,1 @@
+After code changes, run at least `pnpm typecheck`. For backend-only changes, also run `pnpm --filter @sui-portfolio/backend build` when practical. If auth/session logic changes, verify env defaults in backend/.env(.example) stay aligned.

@@ -1,0 +1,1 @@
+Sui-first Web3 portfolio assistant monorepo. Frontend: Next.js app in frontend/. Backend: NestJS API in backend/. Worker: separate TypeScript worker in worker/. Shared package in shared/. Backend is source of truth for wallet auth, sync, analytics, and AI tool responses. MongoDB via Mongoose, Redis optional, BullMQ queue layer.

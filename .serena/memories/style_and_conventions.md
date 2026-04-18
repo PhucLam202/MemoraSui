@@ -1,0 +1,1 @@
+TypeScript strict mode across workspace. NestJS backend files use kebab-case names with suffixes like *.controller.ts and *.service.ts. Env vars use UPPER_SNAKE_CASE. Do not log secrets, signatures, session tokens, or raw wallet payloads. Mongoose schemas use PascalCase schema exports. Favor concise JSON API responses and preserve x-correlation-id/error JSON conventions.
