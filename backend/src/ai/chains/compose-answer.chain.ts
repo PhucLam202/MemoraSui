@@ -28,14 +28,14 @@ function buildLengthGuide(answerLength: AnswerLength) {
 
 function resolveMaxTokens(answerLength: AnswerLength) {
   if (answerLength === 'long') {
-    return 1200;
+    return 2400;
   }
 
   if (answerLength === 'medium') {
-    return 800;
+    return 1400;
   }
 
-  return 420;
+  return 800;
 }
 
 function buildAnswerStyle(question: string, answerLength: AnswerLength) {

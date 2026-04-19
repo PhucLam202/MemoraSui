@@ -122,18 +122,24 @@ export class AnalyticsService {
 
     if (balances.length === 0 && objects.length === 0 && events.length === 0 && transactions.length === 0 && network === 'testnet') {
       this.logger.warn(`Analytics source empty for wallet=${walletAddress} network=${network}; syncing directly from RPC.`);
-      const snapshot = await this.suiIngestionService.syncWallet(walletAddress, network, {
-        limit: backendEnv.sui.pageSize,
-      });
-      const normalizedEvents = this.suiNormalizationService.normalizeTransactions(snapshot.transactions, walletAddress, network);
-      return this.buildAnalyticsSnapshot(
-        walletAddress,
-        network,
-        snapshot.coins as unknown as Record<string, unknown>[],
-        snapshot.objects as unknown as Record<string, unknown>[],
-        normalizedEvents,
-        snapshot.transactions as unknown as Record<string, unknown>[],
-      );
+      try {
+        const snapshot = await this.suiIngestionService.syncWallet(walletAddress, network, {
+          limit: backendEnv.sui.pageSize,
+        });
+        const normalizedEvents = this.suiNormalizationService.normalizeTransactions(snapshot.transactions, walletAddress, network);
+        return this.buildAnalyticsSnapshot(
+          walletAddress,
+          network,
+          snapshot.coins as unknown as Record<string, unknown>[],
+          snapshot.objects as unknown as Record<string, unknown>[],
+          normalizedEvents,
+          snapshot.transactions as unknown as Record<string, unknown>[],
+        );
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        this.logger.error(`Direct RPC sync failed for wallet=${walletAddress} network=${network}: ${detail}`);
+        return this.buildAnalyticsSnapshot(walletAddress, network, [], [], [], []);
+      }
     }
 
     const normalizedEvents = events.length > 0 || transactions.length === 0
@@ -684,9 +690,4 @@ function toBigInt(value: unknown) {
   }
 
   return 0n;
-}
-
-function absBigInt(value: string | number | bigint | null | undefined) {
-  const bigIntValue = toBigInt(value);
-  return bigIntValue < 0n ? -bigIntValue : bigIntValue;
 }

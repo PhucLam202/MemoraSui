@@ -189,8 +189,8 @@ export class SuiIngestionService {
   ) {
     const filter =
       relation === 'sender'
-        ? { sentAddress: walletAddress }
-        : { affectedAddress: walletAddress };
+        ? { FromAddress: walletAddress }
+        : { FromOrToAddress: { addr: walletAddress } };
     const query = {
       filter,
       cursor,

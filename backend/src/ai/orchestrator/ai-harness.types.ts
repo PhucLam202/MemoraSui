@@ -26,6 +26,13 @@ export type AiHarnessInput = {
   question: string;
 };
 
+export type TransactionRequest = {
+  amount: number;
+  amountMist: string;
+  recipient: string;
+  network: string;
+};
+
 export type AiHarnessOutput = {
   intent: WalletQuestionIntent;
   answer: string;
@@ -35,6 +42,7 @@ export type AiHarnessOutput = {
   analyzedFacts: string;
   routeSource: AiRoutePlan['source'];
   plannedToolCalls: AiPlannedToolCall[];
+  transactionRequest?: TransactionRequest;
 };
 
 export type AiStreamEvent =

@@ -14,6 +14,8 @@ import { LangGraphOrchestratorService } from '../graph/langgraph-orchestrator.se
 import { ToolCallLoop } from './tool-call.loop';
 import { type AiHarnessInput, type AiHarnessOutput, type AiStreamEmitter } from './ai-harness.types';
 import { AiToolRegistry } from './tool-registry';
+import { TransferTool } from '../tools/transfer.tool';
+import { loadAgentsConfig } from '../config';
 
 function buildAnswerContextDiagnostics(answerContext?: Record<string, unknown>) {
   if (!answerContext) {
@@ -52,9 +54,40 @@ export class ChatOrchestratorService {
     private readonly toolRegistry: AiToolRegistry,
     private readonly memWalService: MemWalService,
     private readonly langGraphOrchestrator: LangGraphOrchestratorService,
+    private readonly transferTool: TransferTool,
   ) {}
 
   async answer(input: AiHarnessInput, options?: { emit?: AiStreamEmitter }): Promise<AiHarnessOutput> {
+    const wallet = await this.walletService.resolveWallet(input.walletId);
+
+    const transferIntent = this.detectTransferIntent(input.question);
+    if (transferIntent) {
+      const txRequest = this.transferTool.parseTransfer(input.question, wallet.network);
+      if (txRequest) {
+        return {
+          intent: 'transfer',
+          answer: `Xác nhận chuyển **${txRequest.amount} SUI** đến \`${txRequest.recipient}\`. Vui lòng xác nhận giao dịch trong ví của bạn.`,
+          toolCalls: [],
+          memoryReads: [],
+          memoryWrites: [],
+          analyzedFacts: '',
+          routeSource: 'classifier',
+          plannedToolCalls: [],
+          transactionRequest: txRequest,
+        };
+      }
+      return {
+        intent: 'transfer',
+        answer: 'Không thể phân tích lệnh chuyển tiền. Vui lòng nói rõ số lượng SUI và địa chỉ ví nhận (ví dụ: "chuyển 0.1 SUI cho 0xABC...").',
+        toolCalls: [],
+        memoryReads: [],
+        memoryWrites: [],
+        analyzedFacts: '',
+        routeSource: 'classifier',
+        plannedToolCalls: [],
+      };
+    }
+
     try {
       const graphOutput = await this.langGraphOrchestrator.answer(input, options);
       if (graphOutput) {
@@ -64,7 +97,6 @@ export class ChatOrchestratorService {
       this.logger.warn(`LangGraph orchestrator failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    const wallet = await this.walletService.resolveWallet(input.walletId);
     const chatNamespace = buildChatNamespace(wallet.id);
     const insightsNamespace = buildInsightsNamespace(wallet.id);
 
@@ -131,12 +163,14 @@ export class ChatOrchestratorService {
         .join(',')} answerContextLength=${diagnostics.answerContextLength} portfolioHoldingCount=${diagnostics.portfolioHoldingCount} hasUsdValues=${diagnostics.hasUsdValues} topAssetsCount=${diagnostics.topAssetsCount} answerContextPreview=${diagnostics.answerContextPreview}`,
     );
 
+    const agentsConfig = loadAgentsConfig();
     const composed = await this.composeAnswerChain.run({
       question: input.question,
       baselineAnswer: execution.text,
       answerContext: execution.answerContext,
       recalledMemories: recalledTexts,
       toolCalls: execution.toolCalls,
+      responseLength: agentsConfig.general.responseLength,
     });
 
     const memoryWrites: Array<Record<string, unknown>> = [];
@@ -184,5 +218,9 @@ export class ChatOrchestratorService {
         recalledMemories: recalledTexts,
       }),
     };
+  }
+
+  private detectTransferIntent(question: string): boolean {
+    return /(chuyển|chuyen|transfer|send|gửi|gui)\s.*(sui|token|coin|\d)|(send|transfer)\s.*\bto\b|0x[0-9a-f]{40,}/i.test(question);
   }
 }

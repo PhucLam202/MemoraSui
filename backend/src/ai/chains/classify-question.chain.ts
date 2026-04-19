@@ -9,12 +9,17 @@ export type WalletQuestionIntent =
   | 'protocol_usage'
   | 'research'
   | 'staking'
+  | 'transfer'
   | 'unknown';
 
 @Injectable()
 export class ClassifyQuestionChain {
   run(question: string): WalletQuestionIntent {
     const normalized = question.toLowerCase();
+
+    if (/(chuyển|chuyen|transfer|send|gửi|gui)\s.*(sui|token|coin|\d)|(send|transfer)\s.*\bto\b|0x[0-9a-f]{40,}/i.test(normalized)) {
+      return 'transfer';
+    }
 
     const researchCue = /(research|project|tokenomics|news|sentiment|market cap|tvl|whale|competitor|comparison|compare|outlook|roadmap|whitepaper|fundamentals|supply|total supply|max supply|circulating supply|wallet supply|walrus)/.test(normalized);
     const aboutCue = /(information|info|tell me|what is|who is|details|overview|explain|about)/.test(normalized);

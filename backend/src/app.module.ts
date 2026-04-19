@@ -24,6 +24,7 @@ import { GetProtocolUsageTool } from './ai/tools/get-protocol-usage.tool';
 import { GetRiskFlagsTool } from './ai/tools/get-risk-flags.tool';
 import { GetWalletSummaryTool } from './ai/tools/get-wallet-summary.tool';
 import { LangGraphToolRegistry } from './ai/tools/langgraph-tool-registry';
+import { TransferTool } from './ai/tools/transfer.tool';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { AnalyticsController } from './analytics/analytics.controller';
@@ -95,6 +96,7 @@ import { MetricsService } from './observability/metrics.service';
     GetRiskFlagsTool,
     LangGraphToolRegistry,
     WalletAgent,
+    TransferTool,
   ],
 })
 export class AppModule {}

@@ -79,7 +79,7 @@ export function createLLM(
             model: modelName,
             messages,
             temperature: options.temperature ?? agentConfig.temperature ?? 0,
-            max_completion_tokens: options.maxTokens ?? 700,
+            max_completion_tokens: options.maxTokens ?? (agentConfig as { maxTokens?: number }).maxTokens ?? 1500,
           }),
           signal: controller.signal,
         });

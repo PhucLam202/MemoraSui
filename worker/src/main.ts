@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { Worker } from 'bullmq';
+import { Worker, Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { z } from 'zod';
 
@@ -72,6 +72,8 @@ async function bootstrap() {
     maxRetriesPerRequest: null,
   });
 
+  const queue = new Queue(env.QUEUE_NAME, { connection });
+
   const worker = new Worker(
     env.QUEUE_NAME,
     async (job) => {
@@ -95,6 +97,14 @@ async function bootstrap() {
 
         if (!response.ok) {
           const detail = await response.text();
+          if (response.status === 404) {
+            log('warn', `Wallet ${walletId} not found, removing stale repeat job.`, { walletId });
+            const repeatKey = job.repeatJobKey;
+            if (repeatKey) {
+              await queue.removeRepeatableByKey(repeatKey);
+            }
+            return;
+          }
           throw new Error(`Backend repeat sync failed with ${response.status}: ${detail}`);
         }
 
@@ -147,6 +157,7 @@ async function bootstrap() {
 
   const shutdown = async () => {
     await worker.close();
+    await queue.close();
     await connection.quit();
     process.exit(0);
   };

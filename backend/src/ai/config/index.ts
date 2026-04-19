@@ -87,7 +87,7 @@ const DEFAULT_CONFIG: LangGraphAgentsConfig = {
       provider: 'openai',
       model: 'openai',
       temperature: 0.1,
-      maxTokens: 700,
+      maxTokens: 1500,
       systemPrompt: [
         'You are the Portfolio sub-agent.',
         'Your job is to explain holdings, token allocation, portfolio value, PnL, and risk in a concise factual way.',
@@ -107,7 +107,7 @@ const DEFAULT_CONFIG: LangGraphAgentsConfig = {
       provider: 'deepseek',
       model: 'openai',
       temperature: 0.1,
-      maxTokens: 700,
+      maxTokens: 1500,
       systemPrompt: [
         'You are the Gas sub-agent.',
         'Your job is to explain gas usage, fee trends, and fee outliers.',

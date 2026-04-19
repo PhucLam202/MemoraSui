@@ -206,29 +206,39 @@ function decodeDuckDuckGoUrl(rawUrl: string) {
 async function searchTavily(query: string): Promise<ResearchSource[]> {
   const apiKey = process.env.TAVILY_API_KEY?.trim();
   if (!apiKey) {
+    logger.warn('TAVILY_API_KEY is not set, skipping Tavily search.');
     return [];
   }
 
-  const response = await fetch(TAVILY_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      query,
-      topic: 'general',
-      search_depth: 'advanced',
-      max_results: MAX_SOURCES,
-      include_answer: false,
-      include_raw_content: false,
-      include_favicon: false,
-      include_images: false,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+
+  let response: Response;
+  try {
+    response = await fetch(TAVILY_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        topic: 'general',
+        search_depth: 'basic',
+        max_results: MAX_SOURCES,
+        include_answer: false,
+        include_raw_content: false,
+        include_images: false,
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
-    throw new Error(`Tavily search failed with status ${response.status}`);
+    const body = await response.text().catch(() => '');
+    throw new Error(`Tavily search failed with status ${response.status}: ${body.slice(0, 200)}`);
   }
 
   const data = (await response.json()) as {
@@ -304,20 +314,30 @@ async function searchDuckDuckGo(query: string): Promise<ResearchSource[]> {
 
 async function gatherResearchSources(question: string): Promise<ResearchSource[]> {
   const query = buildResearchSearchQuery(question);
+
   try {
     const tavilyResults = await searchTavily(query);
     if (tavilyResults.length > 0) {
+      logger.log(`Tavily returned ${tavilyResults.length} results for query: "${query}"`);
       return tavilyResults;
     }
-  } catch {
-    // Fall back to DuckDuckGo below.
+    logger.warn(`Tavily returned 0 results for query: "${query}", falling back to DuckDuckGo`);
+  } catch (error) {
+    logger.warn(`Tavily search failed: ${error instanceof Error ? error.message : String(error)}. Falling back to DuckDuckGo.`);
   }
 
   try {
-    return await searchDuckDuckGo(query);
-  } catch {
-    return [];
+    const ddgResults = await searchDuckDuckGo(query);
+    if (ddgResults.length > 0) {
+      logger.log(`DuckDuckGo returned ${ddgResults.length} results for query: "${query}"`);
+      return ddgResults;
+    }
+    logger.warn(`DuckDuckGo returned 0 results for query: "${query}"`);
+  } catch (error) {
+    logger.warn(`DuckDuckGo search failed: ${error instanceof Error ? error.message : String(error)}`);
   }
+
+  return [];
 }
 
 function buildSnippetFindings(sources: ResearchSource[]) {

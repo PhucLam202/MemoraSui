@@ -172,6 +172,7 @@ export class ChatService {
       assistantMessage,
       intent: answer.intent,
       analyzedFacts: answer.analyzedFacts,
+      transactionRequest: answer.transactionRequest,
     };
   }
 

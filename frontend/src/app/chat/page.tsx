@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { MessageSquarePlus, Activity, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { MessageSquarePlus, Activity, ChevronDown, ChevronRight, Loader2, SendHorizonal, X } from 'lucide-react';
+import { useDAppKit } from '@mysten/dapp-kit-react';
+import { Transaction } from '@mysten/sui/transactions';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ClayCard } from '@/components/shared/ClayCard';
 import { ClayInput } from '@/components/shared/ClayInput';
@@ -9,6 +11,13 @@ import { ClayButton } from '@/components/shared/ClayButton';
 import { ChatBubble } from '@/components/modules/chat/ChatBubble';
 import { fetchApi, postApiStream } from '@/lib/api-client';
 import { loadWalletSessionFromStorage, type WalletSession } from '@/lib/wallet-session';
+
+type TransactionRequest = {
+  amount: number;
+  amountMist: string;
+  recipient: string;
+  network: string;
+};
 
 type UiMessage = {
   id: string;
@@ -214,8 +223,12 @@ function mapMessageToUi(message: ChatMessageItem): UiMessage {
 }
 
 export default function ChatPage() {
+  const dAppKit = useDAppKit();
   const [session, setSession] = useState<WalletSession | null>(null);
   const walletId = session?.walletId ?? session?.address ?? null;
+  const [pendingTx, setPendingTx] = useState<TransactionRequest | null>(null);
+  const [txStatus, setTxStatus] = useState<'idle' | 'signing' | 'success' | 'error'>('idle');
+  const [txDigest, setTxDigest] = useState<string | null>(null);
 
   const [input, setInput] = useState('');
   const [isCompactLayout, setIsCompactLayout] = useState(false);
@@ -568,6 +581,12 @@ export default function ChatPage() {
         sources: mapToolSources(resolvedResponse.assistantMessage.toolCalls),
       };
 
+      if (resolvedResponse.transactionRequest) {
+        setPendingTx(resolvedResponse.transactionRequest as TransactionRequest);
+        setTxStatus('idle');
+        setTxDigest(null);
+      }
+
       setMessages((prev) => [...prev, assistantMessage]);
       setSessionId(nextSessionId);
       setStoredSessionId(walletId, nextSessionId);
@@ -593,6 +612,7 @@ export default function ChatPage() {
     setInput('');
     setChatError(null);
     setFlowSteps([]);
+    setPendingTx(null);
     setMessages([
       {
         id: 'intro',
@@ -603,6 +623,45 @@ export default function ChatPage() {
     ]);
     if (walletId) {
       setStoredSessionId(walletId, undefined);
+    }
+  }
+
+  async function handleConfirmTransfer() {
+    if (!pendingTx) return;
+    setTxStatus('signing');
+
+    try {
+      const tx = new Transaction();
+      const [coin] = tx.splitCoins(tx.gas, [BigInt(pendingTx.amountMist)]);
+      tx.transferObjects([coin], pendingTx.recipient);
+
+      const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
+      const digest =
+        result.$kind === 'Transaction' ? (result.Transaction as unknown as Record<string, unknown>).digest as string | undefined : undefined;
+
+      setTxStatus('success');
+      setTxDigest(digest ?? 'submitted');
+      setPendingTx(null);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          text: `Giao dịch thành công!\nDigest: \`${digest ?? 'submitted'}\``,
+          isAi: true,
+          time: formatDisplayTime(),
+        },
+      ]);
+    } catch (error) {
+      setTxStatus('error');
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          text: `Giao dịch thất bại: ${error instanceof Error ? error.message : String(error)}`,
+          isAi: true,
+          time: formatDisplayTime(),
+        },
+      ]);
     }
   }
 
@@ -1021,6 +1080,87 @@ export default function ChatPage() {
               </div>
             )}
               </>
+            )}
+
+            {pendingTx && txStatus !== 'success' && (
+              <div
+                style={{
+                  margin: '8px 0',
+                  padding: '18px 20px',
+                  borderRadius: '20px',
+                  background: 'rgba(255,255,255,0.9)',
+                  border: '1.5px solid rgba(107, 143, 113, 0.28)',
+                  boxShadow: '0 8px 28px rgba(50, 60, 52, 0.1)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '14px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--matcha-accent)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    Xác nhận giao dịch
+                  </span>
+                  <button
+                    onClick={() => setPendingTx(null)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px' }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Số lượng</span>
+                    <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{pendingTx.amount} SUI</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', gap: '12px' }}>
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 600, flexShrink: 0 }}>Đến</span>
+                    <span style={{ fontFamily: 'monospace', color: 'var(--text-primary)', wordBreak: 'break-all', textAlign: 'right' }}>
+                      {pendingTx.recipient}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Mạng</span>
+                    <span style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>{pendingTx.network}</span>
+                  </div>
+                </div>
+
+                {txStatus === 'error' && (
+                  <div style={{ fontSize: '0.82rem', color: '#B85C5C', fontWeight: 600 }}>
+                    Giao dịch thất bại. Vui lòng thử lại.
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <ClayButton
+                    onClick={() => void handleConfirmTransfer()}
+                    disabled={txStatus === 'signing'}
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                  >
+                    {txStatus === 'signing' ? (
+                      <><Loader2 size={14} className="spinning-loader" /> Đang ký...</>
+                    ) : (
+                      <><SendHorizonal size={14} /> Xác nhận & Gửi</>
+                    )}
+                  </ClayButton>
+                  <button
+                    onClick={() => setPendingTx(null)}
+                    disabled={txStatus === 'signing'}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '14px',
+                      border: '1px solid var(--border-color)',
+                      background: 'transparent',
+                      color: 'var(--text-secondary)',
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      cursor: txStatus === 'signing' ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Huỷ
+                  </button>
+                </div>
+              </div>
             )}
 
             <div ref={messagesEndRef} />
