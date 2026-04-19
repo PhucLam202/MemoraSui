@@ -141,7 +141,7 @@ export const Sidebar = ({ activePath }: { activePath?: string }) => {
           </div>
           {!isCollapsed && (
             <div style={{ overflow: 'hidden', paddingRight: '40px' }}>
-               <h2 style={{ fontSize: '1.25rem', lineHeight: 1, marginBottom: '2px', whiteSpace: 'nowrap' }}>Matcha</h2>
+               <h2 style={{ fontSize: '1.25rem', lineHeight: 1, marginBottom: '2px', whiteSpace: 'nowrap' }}>memoraSui</h2>
                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', letterSpacing: '0.05em', fontWeight: 600, whiteSpace: 'nowrap' }}>PORTFOLIO</span>
             </div>
           )}

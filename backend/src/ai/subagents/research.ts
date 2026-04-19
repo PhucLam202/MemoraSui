@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { type LangGraphAgentState } from '../graph/state';
 import { createLLM } from '../llm/llmFactory';
 import { loadAgentsConfig } from '../config';
@@ -15,13 +16,82 @@ type ResearchRunOptions = {
   emit?: AiStreamEmitter;
 };
 
-const MAX_SOURCES = 5;
+const MAX_SOURCES = 8;
 const TAVILY_ENDPOINT = 'https://api.tavily.com/search';
 const DUCKDUCKGO_ENDPOINT = 'https://html.duckduckgo.com/html/';
+const logger = new Logger('ResearchSubagent');
 
 const BLOCKCHAIN_KEYWORDS = /(sui|blockchain|token|protocol|defi|web3|crypto|coin|nft|on-chain|onchain|wallet|dex|bridge|validator|mainnet|testnet|walrus)/i;
 const WALRUS_AMBIGUITY_KEYWORDS = /(walrus)/i;
 const ANIMAL_NOISE_KEYWORDS = /(britannica|wikipedia|animal|marine mammal|mammal|walrus \(animal\)|moóc|hải mã|odobenus)/i;
+
+function resolveResearchMaxTokens(config: ReturnType<typeof loadAgentsConfig>) {
+  return config.subagents.research.maxTokens ?? 3200;
+}
+
+async function completeResearchAnswer(
+  config: ReturnType<typeof loadAgentsConfig>,
+  question: string,
+  recalledMemories: string[],
+  sources: ResearchSource[],
+) {
+  const messages = [
+    {
+      role: 'system' as const,
+      content:
+        config.subagents.research.systemPrompt ||
+        [
+          'You are the Research sub-agent.',
+          'Focus on blockchain, token, protocol, and ecosystem research.',
+          'Prefer Sui ecosystem context when the query is ambiguous.',
+          'Return a detailed markdown report with Overview, Key Findings, Risks or Caveats, and Sources.',
+          'Do not use animal or encyclopedia results when the user is asking about crypto or blockchain.',
+        ].join('\n'),
+    },
+    {
+      role: 'user' as const,
+      content: buildResearchPrompt(question, recalledMemories, sources),
+    },
+  ];
+
+  const primaryClient = createLLM(config, 'research');
+  const response = await primaryClient.complete(messages, {
+    temperature: config.subagents.research.temperature,
+    maxTokens: resolveResearchMaxTokens(config),
+  });
+
+  if (response?.trim()) {
+    return response.trim();
+  }
+
+  logger.warn(
+    `Primary research provider "${config.subagents.research.provider}" returned no content. Retrying with OpenAI fallback.`,
+  );
+
+  const fallbackConfig = {
+    ...config,
+    subagents: {
+      ...config.subagents,
+      research: {
+        ...config.subagents.research,
+        provider: 'openai',
+        model: 'openai',
+      },
+    },
+  };
+
+  const fallbackClient = createLLM(fallbackConfig, 'research');
+  const fallbackResponse = await fallbackClient.complete(messages, {
+    temperature: 0.1,
+    maxTokens: resolveResearchMaxTokens(config),
+  });
+
+  if (fallbackResponse?.trim()) {
+    return fallbackResponse.trim();
+  }
+
+  return null;
+}
 
 function buildResearchPrompt(question: string, recalledMemories: string[], sources: ResearchSource[]) {
   const sourceLines = sources.length > 0
@@ -35,7 +105,10 @@ function buildResearchPrompt(question: string, recalledMemories: string[], sourc
     'You are the Research sub-agent.',
     'Use the provided search results as the only source of truth.',
     'You gather recent, verifiable context about a token, protocol, project, or ecosystem.',
-    'Return concise markdown with sections: Summary, Key Facts, Risks, Sentiment.',
+    'Return a detailed markdown report.',
+    'Use these sections in order: Overview, Key Findings, Risks or Caveats, Sources.',
+    'Do not compress the answer into a short summary when there is enough source material.',
+    'Include concrete facts, dates, metrics, and protocol details when they are present in the sources.',
     'If evidence is weak or incomplete, say that clearly and explain what is missing.',
     'Do not invent sources.',
     'Do not say there is no information if search results are available; instead summarize what was found.',
@@ -65,6 +138,14 @@ function buildResearchSearchQuery(question: string) {
 
 function cleanText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function toSentenceCase(value: string) {
+  const normalized = cleanText(value).replace(/^[\-\d.\s:]+/, '');
+  if (!normalized) {
+    return '';
+  }
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
 function truncateText(value: string, maxLength: number) {
@@ -239,32 +320,76 @@ async function gatherResearchSources(question: string): Promise<ResearchSource[]
   }
 }
 
+function buildSnippetFindings(sources: ResearchSource[]) {
+  const findings: string[] = [];
+
+  for (const source of sources) {
+    const snippet = cleanText(source.snippet);
+    const sentences = snippet
+      .split(/(?<=[.!?])\s+/)
+      .map((item) => toSentenceCase(item))
+      .filter((item) => item.length >= 40 && item.length <= 240);
+
+    for (const sentence of sentences) {
+      const normalized = sentence.toLowerCase();
+      if (findings.some((existing) => existing.toLowerCase() === normalized)) {
+        continue;
+      }
+      findings.push(sentence);
+      if (findings.length >= 7) {
+        return findings;
+      }
+    }
+  }
+
+  return findings;
+}
+
 function buildFallbackResearchAnswer(question: string, sources: ResearchSource[]) {
+  const findings = buildSnippetFindings(sources);
+  const sourceHighlights =
+    sources.length > 0
+      ? sources
+          .slice(0, 5)
+          .map((source) => `- ${source.title}: ${source.snippet}`)
+          .join('\n')
+      : '- No source highlights are available.';
   const sourceSummary =
     sources.length > 0
       ? sources
-          .map((source) => `- ${source.title} (${source.url})`)
+          .map((source, index) => `${index + 1}. ${source.title}${source.publishedAt ? ` (${source.publishedAt})` : ''}\n   - URL: ${source.url}`)
           .join('\n')
       : '- No external sources were returned by Tavily or DuckDuckGo.';
 
   return [
-    'Summary',
-    `- I found ${sources.length > 0 ? `${sources.length} external source(s)` : 'no external sources'} for "${question}".`,
+    'Overview',
+    sources.length > 0
+      ? `I found ${sources.length} external source(s) for "${question}" and assembled a source-based summary from the retrieved snippets.`
+      : `I found no external sources for "${question}".`,
     '',
-    'Key Facts',
-    sourceSummary,
+    'Key Findings',
+    ...(findings.length > 0
+      ? findings.map((finding) => `- ${finding}`)
+      : [
+          sources.length > 0
+            ? '- I collected source results, but the snippets were too weak to produce a reliable synthesized summary.'
+            : '- No research sources were available, so there is no reliable external context to summarize.',
+        ]),
     '',
-    'Risks',
+    'Risks or Caveats',
     '- Search quality depends on source coverage and the current web index.',
+    '- This fallback answer is synthesized only from retrieved snippets, not from full-page review.',
     '',
-    'Sentiment',
-    '- No sentiment signal was extracted because the question needs source-level review.',
+    'Source Highlights',
+    sourceHighlights,
+    '',
+    'Sources',
+    sourceSummary,
   ].join('\n');
 }
 
 export async function runResearchSubagent(state: LangGraphAgentState, options: ResearchRunOptions = {}) {
   const config = loadAgentsConfig();
-  const llm = createLLM(config, 'research');
   const emit = options.emit;
   const searchQuery = buildResearchSearchQuery(state.question);
 
@@ -335,30 +460,7 @@ export async function runResearchSubagent(state: LangGraphAgentState, options: R
     timestamp: Date.now(),
   });
 
-  const response = await llm.complete(
-    [
-      {
-        role: 'system',
-        content:
-          config.subagents.research.systemPrompt ||
-          [
-            'You are the Research sub-agent.',
-            'Focus on blockchain, token, protocol, and ecosystem research.',
-            'Prefer Sui ecosystem context when the query is ambiguous.',
-            'Return concise markdown with Summary, Key Facts, Risks, Sentiment.',
-            'Do not use animal or encyclopedia results when the user is asking about crypto or blockchain.',
-          ].join('\n'),
-      },
-      {
-        role: 'user',
-        content: buildResearchPrompt(state.question, state.recalledMemories, sources),
-      },
-    ],
-    {
-      temperature: config.subagents.research.temperature,
-      maxTokens: 500,
-    },
-  );
+  const response = await completeResearchAnswer(config, state.question, state.recalledMemories, sources);
 
   emit?.({
     type: 'step_end',

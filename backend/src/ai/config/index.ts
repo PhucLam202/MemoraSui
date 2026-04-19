@@ -16,6 +16,7 @@ export type LangGraphSubagentConfig = {
   provider: string;
   model: string;
   temperature: number;
+  maxTokens?: number;
   systemPrompt: string;
   description: string;
   maxIterations: number;
@@ -86,6 +87,7 @@ const DEFAULT_CONFIG: LangGraphAgentsConfig = {
       provider: 'openai',
       model: 'openai',
       temperature: 0.1,
+      maxTokens: 700,
       systemPrompt: [
         'You are the Portfolio sub-agent.',
         'Your job is to explain holdings, token allocation, portfolio value, PnL, and risk in a concise factual way.',
@@ -105,6 +107,7 @@ const DEFAULT_CONFIG: LangGraphAgentsConfig = {
       provider: 'deepseek',
       model: 'openai',
       temperature: 0.1,
+      maxTokens: 700,
       systemPrompt: [
         'You are the Gas sub-agent.',
         'Your job is to explain gas usage, fee trends, and fee outliers.',
@@ -124,6 +127,7 @@ const DEFAULT_CONFIG: LangGraphAgentsConfig = {
       provider: 'openai',
       model: 'openai',
       temperature: 0.1,
+      maxTokens: 700,
       systemPrompt: [
         'You are the Staking sub-agent.',
         'Explain staking positions, rewards, APY, and claim timing.',
@@ -139,6 +143,7 @@ const DEFAULT_CONFIG: LangGraphAgentsConfig = {
       provider: 'deepseek',
       model: 'openai',
       temperature: 0.0,
+      maxTokens: 700,
       systemPrompt: [
         'You are the Tax sub-agent.',
         'Focus on capital gains, staking income, and report generation.',
@@ -154,6 +159,7 @@ const DEFAULT_CONFIG: LangGraphAgentsConfig = {
       provider: 'deepseek',
       model: 'deepseek-reasoner',
       temperature: 0.2,
+      maxTokens: 3200,
       systemPrompt: [
         'You are the Research sub-agent.',
         'Your job is to gather external information, on-chain data, news, sentiment, and protocol details to help answer user questions.',
@@ -162,7 +168,7 @@ const DEFAULT_CONFIG: LangGraphAgentsConfig = {
         'If information is uncertain or outdated, clearly state it.',
         'Combine on-chain data with off-chain context when relevant.',
         'Keep responses factual, well-structured, and cite sources when possible.',
-        'Return concise markdown with clear sections (Summary, Key Facts, Risks, Sentiment).',
+        'Return a detailed markdown report with the sections: Overview, Key Findings, Risks or Caveats, and Sources.',
       ].join('\n'),
       description: 'External research on tokens, protocols, news, sentiment and market context',
       maxIterations: 5,
@@ -177,7 +183,7 @@ const DEFAULT_CONFIG: LangGraphAgentsConfig = {
   general: {
     recursionLimit: 12,
     parallelSubagents: true,
-    responseLength: 'short',
+    responseLength: 'long',
   },
 };
 
@@ -198,6 +204,12 @@ function normalizeSubagentConfig(input: unknown, fallback: LangGraphSubagentConf
         : typeof record.temp === 'number'
           ? record.temp
           : fallback.temperature,
+    maxTokens:
+      typeof record.max_tokens === 'number'
+        ? record.max_tokens
+        : typeof record.maxTokens === 'number'
+          ? record.maxTokens
+          : fallback.maxTokens,
     systemPrompt:
       typeof record.system_prompt === 'string' && record.system_prompt.trim()
         ? record.system_prompt.trim()

@@ -16,7 +16,9 @@ function normalizeIntent(value: unknown): WalletQuestionIntent {
     value === 'fee' ||
     value === 'activity' ||
     value === 'object' ||
-    value === 'protocol_usage'
+    value === 'protocol_usage' ||
+    value === 'research' ||
+    value === 'staking'
   ) {
     return value;
   }
@@ -25,8 +27,8 @@ function normalizeIntent(value: unknown): WalletQuestionIntent {
 }
 
 function shouldPreferClassifier(fallbackIntent: WalletQuestionIntent, openAiIntent: WalletQuestionIntent) {
-  if (fallbackIntent === 'unknown') {
-    return false;
+  if (openAiIntent === 'research' && fallbackIntent !== 'research') {
+    return true;
   }
 
   if (openAiIntent === 'unknown') {
@@ -66,7 +68,7 @@ export class RouteToolsChain {
           content: [
             'You route wallet questions into a single intent for an analytics harness.',
             'Return JSON only with this shape:',
-            '{"intent":"wallet_summary|portfolio|fee|activity|object|protocol_usage|unknown","toolNames":["..."],"rationale":"short"}',
+            '{"intent":"wallet_summary|portfolio|fee|activity|object|protocol_usage|research|staking|unknown","toolNames":["..."],"rationale":"short"}',
             'Use only these tools:',
             this.toolRegistry.describeTools(),
           ].join('\n'),

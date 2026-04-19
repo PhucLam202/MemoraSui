@@ -66,7 +66,12 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children, activePath }) 
     return isWalletSessionValid(session);
   }, [session]);
 
-  const shouldBlockApp = !hasConnectedWallet || !hasValidSession;
+  const sessionWalletMismatch = useMemo(() => {
+    if (!hasValidSession || !hasConnectedWallet) return false;
+    return session.address !== account?.address;
+  }, [hasValidSession, hasConnectedWallet, session?.address, account?.address]);
+
+  const shouldBlockApp = !hasValidSession || sessionWalletMismatch;
 
   async function handleConnectWallet() {
     setError(null);
@@ -149,7 +154,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children, activePath }) 
               }}>
                 <Wallet size={20} />
               </div>
-              <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--matcha-accent)' }}>Matcha</h2>
+              <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--matcha-accent)' }}>memoraSui</h2>
             </div>
             
             {/* Context Title moved down to main content section */}

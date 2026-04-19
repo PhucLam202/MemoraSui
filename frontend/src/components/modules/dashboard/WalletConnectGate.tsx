@@ -190,7 +190,12 @@ export function WalletConnectGate({ children }: WalletConnectGateProps) {
     Boolean(account?.address) &&
     Boolean(currentWallet);
 
-  const shouldBlockDashboard = !hasConnectedWallet && walletState.status !== 'valid';
+  const sessionWalletMismatch = useMemo(() => {
+    if (walletState.status !== 'valid' || !hasConnectedWallet) return false;
+    return walletState.session.address !== account?.address;
+  }, [walletState, hasConnectedWallet, account?.address]);
+
+  const shouldBlockDashboard = walletState.status !== 'valid' || sessionWalletMismatch;
 
   const blockedContentStyle = useMemo<React.CSSProperties>(
     () => ({

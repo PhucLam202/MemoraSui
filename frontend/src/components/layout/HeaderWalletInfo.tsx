@@ -30,7 +30,7 @@ export function HeaderWalletInfo() {
   const wallets = useWallets();
 
   const { session, handleConnect, handleDisconnect, isBusy } = useWalletAuth({
-    appName: 'Matcha Portfolio',
+    appName: 'memoraSui Portfolio',
     apiBaseUrl: '/api/backend',
   });
 

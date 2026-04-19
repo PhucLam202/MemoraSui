@@ -85,6 +85,7 @@ const intentToToolNames: Record<WalletQuestionIntent, string[]> = {
   object: ['getObjectSummary'],
   protocol_usage: ['getProtocolUsage', 'getActivitySummary'],
   research: [],
+  staking: [],
   unknown: [],
 };
 

@@ -9,6 +9,7 @@ import type {
   WalletFeeSummary,
   WalletPortfolioSummary,
   WalletProtocolSummary,
+  WalletStakingSummary,
 } from './analytics.types';
 import type { SuiNetwork } from '../sui/sui.types';
 import { SuiIngestionService } from '../sui/sui-ingestion.service';

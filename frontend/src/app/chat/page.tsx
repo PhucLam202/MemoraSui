@@ -737,7 +737,7 @@ export default function ChatPage() {
             style={{
               padding: '16px 20px',
               borderBottom: '1px solid var(--border-color)',
-              backgroundColor: 'rgba(255, 255, 255, 0.4)',
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.62), rgba(247,244,235,0.72))',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -758,10 +758,12 @@ export default function ChatPage() {
             style={{
               flex: 1,
               overflowY: 'auto',
-              padding: 'var(--spacing-lg)',
+              padding: '20px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '24px',
+              gap: '20px',
+              background:
+                'radial-gradient(circle at top left, rgba(190, 215, 196, 0.22), transparent 28%), linear-gradient(180deg, rgba(249,247,241,0.95), rgba(244,240,231,0.88))',
             }}
           >
             {loadingMessages ? (
@@ -774,7 +776,7 @@ export default function ChatPage() {
               const shouldShowSteps = isLastAiMessage && flowSteps.length > 0;
 
               const renderFlowSteps = () => (
-                <div style={{ paddingLeft: '4px', marginBottom: '8px' }}>
+                  <div style={{ paddingLeft: '4px', marginBottom: '8px' }}>
                   <div
                     onClick={() => setIsFlowExpanded(!isFlowExpanded)}
                     style={{
@@ -784,8 +786,8 @@ export default function ChatPage() {
                       gap: '8px',
                       padding: '6px 12px',
                       borderRadius: '12px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.45)',
-                      border: '1px solid var(--border-color)',
+                      background: 'rgba(255, 255, 255, 0.72)',
+                      border: '1px solid rgba(107, 143, 113, 0.16)',
                       width: 'fit-content',
                       fontSize: '0.78rem',
                       color: 'var(--text-secondary)',
@@ -809,14 +811,15 @@ export default function ChatPage() {
                     <div
                       style={{
                         marginTop: '10px',
-                        padding: '12px 16px',
-                        borderRadius: '16px',
-                        border: '1px solid var(--border-color)',
-                        background: 'rgba(255,255,255,0.5)',
+                        padding: '14px 16px',
+                        borderRadius: '18px',
+                        border: '1px solid rgba(107, 143, 113, 0.14)',
+                        background: 'rgba(255,255,255,0.74)',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '8px',
+                        gap: '10px',
                         maxWidth: '100%',
+                        boxShadow: '0 10px 26px rgba(50, 60, 52, 0.06)',
                       }}
                     >
                       {flowSteps.map((step) => (
@@ -846,7 +849,7 @@ export default function ChatPage() {
                               )}
                             </div>
                             {step.detail && (
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.8 }}>
+                              <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', opacity: 0.88, lineHeight: 1.5 }}>
                                 {step.detail}
                               </div>
                             )}
@@ -864,10 +867,14 @@ export default function ChatPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <ChatBubble message={msg.text} isAi={msg.isAi} timestamp={msg.time} />
                     {msg.isAi && msg.sources && msg.sources.length > 0 && (
-                      <div style={{ paddingLeft: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                          Sources
-                        </span>
+                      <div style={{ paddingLeft: '8px', display: 'grid', gap: '8px', marginTop: '-4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.7 }}>
+                            Research Tools
+                          </span>
+                          <div style={{ flex: 1, height: '1px', background: 'var(--border-color)', opacity: 0.5 }} />
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                         {msg.sources.map((source, index) => {
                           const label = `${source.label} · ${source.summary}`;
                           const content = (
@@ -875,28 +882,32 @@ export default function ChatPage() {
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '6px',
-                                padding: '6px 10px',
-                                borderRadius: '999px',
-                                backgroundColor: 'rgba(255,255,255,0.75)',
-                                border: '1px solid var(--border-color)',
-                                color: 'var(--text-primary)',
+                                gap: '8px',
+                                padding: '6px 14px',
+                                borderRadius: '12px',
+                                background: 'rgba(255,255,255,0.8)',
+                                border: '1px solid rgba(107, 143, 113, 0.12)',
+                                color: 'var(--text-secondary)',
                                 fontSize: '0.78rem',
+                                fontWeight: 600,
                                 lineHeight: 1.2,
+                                boxShadow: '0 4px 12px rgba(50, 60, 52, 0.04)',
+                                transition: 'all 0.2s ease',
                               }}
+                              className="source-chip-premium"
                               title={label}
                             >
                               <span
                                 style={{
-                                  width: '8px',
-                                  height: '8px',
+                                  width: '6px',
+                                  height: '6px',
                                   borderRadius: '999px',
-                                  backgroundColor: source.url ? 'var(--matcha-accent)' : 'var(--text-secondary)',
+                                  backgroundColor: source.url ? 'var(--matcha-primary)' : 'rgba(107, 143, 113, 0.3)',
                                   flexShrink: 0,
                                 }}
                               />
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-                                {label}
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }}>
+                                {source.label}
                               </span>
                             </span>
                           );
@@ -915,6 +926,7 @@ export default function ChatPage() {
                             <span key={`${source.label}-${index}`}>{content}</span>
                           );
                         })}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -934,8 +946,8 @@ export default function ChatPage() {
                     gap: '8px',
                     padding: '6px 12px',
                     borderRadius: '12px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.45)',
-                    border: '1px solid var(--border-color)',
+                    background: 'rgba(255, 255, 255, 0.72)',
+                    border: '1px solid rgba(107, 143, 113, 0.16)',
                     width: 'fit-content',
                     fontSize: '0.78rem',
                     color: 'var(--text-secondary)',
@@ -959,14 +971,15 @@ export default function ChatPage() {
                   <div
                     style={{
                       marginTop: '10px',
-                      padding: '12px 16px',
-                      borderRadius: '16px',
-                      border: '1px solid var(--border-color)',
-                      background: 'rgba(255,255,255,0.5)',
+                      padding: '14px 16px',
+                      borderRadius: '18px',
+                      border: '1px solid rgba(107, 143, 113, 0.14)',
+                      background: 'rgba(255,255,255,0.74)',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '8px',
+                      gap: '10px',
                       maxWidth: '100%',
+                      boxShadow: '0 10px 26px rgba(50, 60, 52, 0.06)',
                     }}
                   >
                     {flowSteps.map((step) => (
@@ -996,7 +1009,7 @@ export default function ChatPage() {
                             )}
                           </div>
                           {step.detail && (
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.8 }}>
+                            <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', opacity: 0.88, lineHeight: 1.5 }}>
                               {step.detail}
                             </div>
                           )}

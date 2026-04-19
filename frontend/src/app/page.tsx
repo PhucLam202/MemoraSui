@@ -40,7 +40,7 @@ export default function LandingPage() {
           }}>
             <Wallet size={20} />
           </div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--matcha-accent)', fontFamily: 'var(--font-heading)' }}>Matcha</h1>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--matcha-accent)', fontFamily: 'var(--font-heading)' }}>memoraSui</h1>
         </div>
         
         <div className="desktop-only" style={{ display: 'flex', gap: '32px', fontWeight: 600, color: 'var(--text-secondary)' }}>
@@ -175,9 +175,9 @@ export default function LandingPage() {
           <div style={{ width: '32px', height: '32px', backgroundColor: 'var(--matcha-primary)', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
             <Wallet size={16} />
           </div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--matcha-accent)' }}>Matcha Portfolio</h2>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--matcha-accent)' }}>memoraSui Portfolio</h2>
         </div>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>© 2024 Matcha. Carved from the sanctuary.</p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>© 2024 memoraSui. Carved from the sanctuary.</p>
       </footer>
 
       <style jsx>{`

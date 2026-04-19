@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { backendEnv } from '../../config/env';
 import type { LangGraphAgentsConfig, LangGraphProviderConfig, LangGraphProviderName, LangGraphSubagentConfig } from '../config';
 
@@ -10,6 +11,8 @@ export type LlmClient = {
   complete(messages: LlmMessage[], options?: { maxTokens?: number; temperature?: number; timeoutMs?: number }): Promise<string | null>;
 };
 
+const logger = new Logger('LlmFactory');
+
 function resolveApiKey(provider: LangGraphProviderConfig) {
   const fromEnv = process.env[provider.apiKeyEnv];
   return fromEnv?.trim() || backendEnv.openai.apiKey.trim();
@@ -17,6 +20,25 @@ function resolveApiKey(provider: LangGraphProviderConfig) {
 
 function resolveBaseUrl(provider: LangGraphProviderConfig) {
   return provider.baseUrl ?? backendEnv.openai.baseUrl;
+}
+
+function resolveModelName(providerName: LangGraphProviderName, configuredModel: string) {
+  const normalized = configuredModel.trim();
+  if (!normalized) {
+    return backendEnv.openai.model;
+  }
+
+  // "openai" is used in this repo as an internal alias, not as a real provider model id.
+  if (normalized === 'openai') {
+    return backendEnv.openai.model;
+  }
+
+  // Keep explicit DeepSeek model names like "deepseek-reasoner" untouched.
+  if (providerName === 'deepseek') {
+    return normalized;
+  }
+
+  return normalized;
 }
 
 export function createLLM(
@@ -40,6 +62,7 @@ export function createLLM(
   }
 
   const baseUrl = resolveBaseUrl(provider).replace(/\/+$/, '');
+  const modelName = resolveModelName(providerName, agentConfig.model);
 
   return {
     async complete(messages, options = {}) {
@@ -53,7 +76,7 @@ export function createLLM(
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: agentConfig.model,
+            model: modelName,
             messages,
             temperature: options.temperature ?? agentConfig.temperature ?? 0,
             max_completion_tokens: options.maxTokens ?? 700,
@@ -62,6 +85,10 @@ export function createLLM(
         });
 
         if (!response.ok) {
+          const errorText = await response.text().catch(() => '');
+          logger.warn(
+            `LLM request failed for agent "${String(agentName)}" via provider "${providerName}" with status ${response.status}. ${errorText.slice(0, 300)}`,
+          );
           return null;
         }
 
@@ -75,8 +102,12 @@ export function createLLM(
         if (Array.isArray(content)) {
           return content.map((part) => part.text ?? '').join('').trim() || null;
         }
+        logger.warn(`LLM response for agent "${String(agentName)}" returned no usable content.`);
         return null;
-      } catch {
+      } catch (error) {
+        logger.warn(
+          `LLM request threw for agent "${String(agentName)}" via provider "${providerName}": ${error instanceof Error ? error.message : String(error)}`,
+        );
         return null;
       } finally {
         clearTimeout(timeoutId);

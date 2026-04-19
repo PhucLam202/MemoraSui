@@ -16,6 +16,18 @@ export class ClassifyQuestionChain {
   run(question: string): WalletQuestionIntent {
     const normalized = question.toLowerCase();
 
+    const researchCue = /(research|project|tokenomics|news|sentiment|market cap|tvl|whale|competitor|comparison|compare|outlook|roadmap|whitepaper|fundamentals|supply|total supply|max supply|circulating supply|wallet supply|walrus)/.test(normalized);
+    const aboutCue = /(information|info|tell me|what is|who is|details|overview|explain|about)/.test(normalized);
+    const tokenNameCue = /\b(sui|wal)\b/.test(normalized);
+
+    if (researchCue) {
+      return 'research';
+    }
+
+    if (aboutCue && tokenNameCue) {
+      return 'portfolio';
+    }
+
     if (/(bao nhiêu tiền|bao nhieu tien|có bao nhiêu tiền|co bao nhieu tien|tổng bao nhiêu|tong bao nhieu|wallet value|worth|giá trị|gia tri)/.test(normalized)) {
       return 'portfolio';
     }
@@ -31,10 +43,7 @@ export class ClassifyQuestionChain {
     if (/(protocol|dex|cetus|bluefin|interaction|tương tác giao thức|giao thức)/.test(normalized)) {
       return 'protocol_usage';
     }
-    if (/(research|project|tokenomics|news|sentiment|market cap|tvl|whale|competitor|comparison|compare|outlook|roadmap|whitepaper|fundamentals|supply|total supply|circulating supply|max supply|wallet supply|walrus)/.test(normalized)) {
-      return 'research';
-    }
-    if (/(portfolio|balance|balances|asset|assets|holding|holdings|token|tokens|coin|coins|holdings count|wallet value|danh mục|số dư|tài sản|số tiền|so tien|bao nhiêu token|bao nhieu token|\bsui\b|\bwal\b)/.test(normalized)) {
+    if (/(portfolio|balance|balances|asset|assets|holding|holdings|token|tokens|coin|coins|holdings count|wallet value|danh mục|số dư|tài sản|số tiền|so tien|bao nhiêu token|bao nhieu token)/.test(normalized)) {
       return 'portfolio';
     }
     if (/(summary|overview|wallet|tổng quan|ví|tài khoản)/.test(normalized)) {
