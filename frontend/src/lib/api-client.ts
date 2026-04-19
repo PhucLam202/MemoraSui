@@ -66,13 +66,30 @@ export async function postApi<T>(path: string, body: Record<string, unknown>): P
 }
 
 export function formatUsd(value: number | null | undefined) {
-  if (typeof value !== 'number' || Number.isNaN(value)) return 'N/A';
+  if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(value);
 }
 
-export function formatSui(value: string | number | null | undefined) {
+export function formatTokenAmount(amount: number | string | null | undefined, decimals: number = 9, symbol: string = 'SUI') {
+  if (amount === null || amount === undefined) return `0 ${symbol}`;
+  const numeric = typeof amount === 'number' ? amount : Number(amount);
+  if (Number.isNaN(numeric)) return `${amount} ${symbol}`;
+  
+  // If the number is very large, it's likely raw units (Mist)
+  // We assume if it's > 10^12 and we have decimals, it needs division
+  // But better to just trust the source. If we are passed a human amount, decimals should be 0 or null.
+  
+  return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${symbol}`;
+}
+
+export function formatSui(value: string | number | null | undefined, isRaw: boolean = true) {
   if (value === null || value === undefined) return '0 SUI';
-  const numeric = typeof value === 'number' ? value : Number(value);
+  let numeric = typeof value === 'number' ? value : Number(value);
   if (Number.isNaN(numeric)) return `${value} SUI`;
-  return `${numeric.toFixed(4)} SUI`;
+  
+  if (isRaw && Math.abs(numeric) > 1000000) {
+    numeric = numeric / 1000000000;
+  }
+  
+  return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 4 })} SUI`;
 }

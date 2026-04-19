@@ -3,16 +3,31 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ClayCard } from '@/components/shared/ClayCard';
-import { fetchApi, formatUsd } from '@/lib/api-client';
+import { fetchApi, formatSui, formatTokenAmount, formatUsd } from '@/lib/api-client';
 import { loadWalletSessionFromStorage } from '@/lib/wallet-session';
-import { Search, Info, Box, Coins, ArrowUpRight } from 'lucide-react';
+import { Search, Info, Box, Coins, ArrowUpRight, TrendingUp } from 'lucide-react';
 
 type PaginationResult<T> = { items: T[] };
 
-type BalanceItem = {
-  coinType?: string;
-  balance?: string;
-  valueUsd?: number | null;
+type WalletPortfolioAssetSummary = {
+  coinType: string;
+  balance: string;
+  amountHuman: number | null;
+  symbol: string;
+  name: string;
+  decimals: number | null;
+  valueUsd: number | null;
+  priceUsd: number | null;
+  isNative: boolean;
+};
+
+type WalletPortfolioSummary = {
+  totalWalletValueUsd: number | null;
+  holdingCount: number;
+  holdings: WalletPortfolioAssetSummary[];
+  objectSummary: {
+    totalObjects: number;
+  };
 };
 
 type ObjectItem = {
@@ -35,7 +50,7 @@ export default function AssetsPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [balances, setBalances] = useState<BalanceItem[]>([]);
+  const [portfolio, setPortfolio] = useState<WalletPortfolioSummary | null>(null);
   const [objects, setObjects] = useState<ObjectItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -48,11 +63,11 @@ export default function AssetsPage() {
       setLoading(true);
       setError(null);
       try {
-        const [balanceResult, objectResult] = await Promise.all([
-          fetchApi<PaginationResult<BalanceItem>>(`/data/wallets/${walletAddress}/balances`, { network: networkName, page: 1, limit: 50 }),
+        const [portfolioResult, objectResult] = await Promise.all([
+          fetchApi<WalletPortfolioSummary>(`/analytics/wallets/${walletAddress}/portfolio`, { network: networkName }),
           fetchApi<PaginationResult<ObjectItem>>(`/data/wallets/${walletAddress}/objects`, { network: networkName, page: 1, limit: 50 }),
         ]);
-        setBalances(balanceResult.items ?? []);
+        setPortfolio(portfolioResult);
         setObjects(objectResult.items ?? []);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load assets/objects.');
@@ -70,17 +85,20 @@ export default function AssetsPage() {
     );
   }, [objects, searchQuery]);
 
-  const totalValue = useMemo(() => {
-    return balances.reduce((sum, b) => sum + (b.valueUsd ?? 0), 0);
-  }, [balances]);
+  const filteredHoldings = useMemo(() => {
+    if (!portfolio?.holdings) return [];
+    return portfolio.holdings.filter(h => 
+      (h.symbol || h.name || '').toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [portfolio, searchQuery]);
 
   return (
     <MainLayout activePath="/assets">
-      <div className="assets-container" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 'var(--spacing-md)' }}>
+      <div className="assets-container" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)', width: '100%' }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-md)' }}>
           <div>
-            <h1 style={{ fontSize: '2.5rem', marginBottom: '4px', letterSpacing: '-0.02em' }}>Assets & Objects</h1>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>Manage your tokens and SUI objects in one place.</p>
+            <h1 style={{ fontSize: '3.5rem', marginBottom: '8px', letterSpacing: '-0.03em', lineHeight: 1.05, fontWeight: 800 }}>Assets & Objects</h1>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem', fontWeight: 500 }}>Manage your tokens and SUI objects in one place.</p>
           </div>
           <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
             <div className="search-wrapper" style={{ position: 'relative' }}>
@@ -113,8 +131,8 @@ export default function AssetsPage() {
               <Coins size={24} />
             </div>
             <div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Balance</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{formatUsd(totalValue)}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Balance</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{formatUsd(portfolio?.totalWalletValueUsd ?? 0)}</div>
             </div>
           </ClayCard>
           <ClayCard variant="raised" padding="md" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -122,8 +140,8 @@ export default function AssetsPage() {
               <Box size={24} />
             </div>
             <div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Objects</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{loading ? '...' : objects.length}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Objects</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{loading ? '...' : (portfolio?.objectSummary?.totalObjects ?? objects.length)}</div>
             </div>
           </ClayCard>
         </div>
@@ -138,30 +156,37 @@ export default function AssetsPage() {
               </h3>
               {loading ? (
                 <div className="skeleton-list">
-                  {[1, 2, 3].map(i => <div key={i} className="skeleton-item" />)}
+                  {[1, 2, 3, 4].map(i => <div key={i} className="skeleton-item" />)}
                 </div>
-              ) : balances.length === 0 ? (
+              ) : filteredHoldings.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)' }}>
                   <p>No balances found.</p>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {balances.map((item, index) => (
-                    <div key={`${item.coinType ?? 'coin'}-${index}`} className="balance-row">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                        <div className="coin-icon">
-                          {item.coinType?.split('::').pop()?.charAt(0) || 'S'}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {filteredHoldings.map((item, index) => (
+                    <div key={`${item.coinType}-${index}`} className="balance-row">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div className="coin-icon" style={{ 
+                          width: '38px', height: '38px', fontSize: '1rem',
+                          background: item.isNative ? 'linear-gradient(135deg, #6FBEE5, #3898EC)' : undefined
+                        }}>
+                          {item.symbol.charAt(0)}
                         </div>
                         <div>
-                          <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>{item.coinType?.split('::').pop() ?? 'Unknown'}</div>
-                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {item.coinType?.split('::')[1] || 'Sui'}
+                          <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{item.symbol}</div>
+                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                            {item.name}
                           </div>
                         </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: 600 }}>{item.balance || '0'}</div>
-                        <div style={{ color: 'var(--matcha-accent)', fontSize: '0.85rem', fontWeight: 600 }}>{formatUsd(item.valueUsd ?? null)}</div>
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                          {formatTokenAmount(item.amountHuman, item.decimals ?? 0)}
+                        </div>
+                        <div style={{ color: 'var(--matcha-accent)', fontSize: '0.8rem', fontWeight: 700 }}>
+                          {formatUsd(item.valueUsd)}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -228,7 +253,7 @@ export default function AssetsPage() {
       <style jsx>{`
         .grid-layout {
           display: grid;
-          grid-template-columns: 350px 1fr;
+          grid-template-columns: 320px 1fr;
           gap: var(--spacing-lg);
         }
 
@@ -236,11 +261,11 @@ export default function AssetsPage() {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 12px 16px;
+          padding: 10px 14px;
           background-color: var(--white);
-          border-radius: 18px;
+          border-radius: 16px;
           transition: var(--transition-fast);
-          border: 1px solid transparent;
+          border: 1px solid rgba(0,0,0,0.03);
         }
         .balance-row:hover {
           transform: translateX(4px);

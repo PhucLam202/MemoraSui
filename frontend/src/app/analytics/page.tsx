@@ -157,11 +157,11 @@ export default function AnalyticsPage() {
 
   return (
     <MainLayout activePath="/analytics">
-      <div className="analytics-shell">
-        <header className="page-header">
+      <div className="analytics-shell" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)', width: '100%' }}>
+        <header className="page-header" style={{ marginBottom: 'var(--spacing-md)' }}>
            <div className="header-badge">REAL-TIME INSIGHTS</div>
-           <h1 className="hero-title">On-Chain Analytics</h1>
-           <p className="hero-subtitle">Comprehensive breakdown of your network footprint and gas economy.</p>
+           <h1 className="hero-title" style={{ fontSize: '3.5rem', marginBottom: '12px', letterSpacing: '-0.02em', lineHeight: 1.1 }}>On-Chain Analytics</h1>
+           <p className="hero-subtitle" style={{ fontSize: '1.25rem', color: 'var(--text-secondary)', maxWidth: '600px' }}>Comprehensive breakdown of your network footprint and gas economy.</p>
         </header>
 
         {error && (

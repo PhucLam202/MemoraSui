@@ -5,6 +5,7 @@ import { SuiNormalizationService } from './sui-normalization.service';
 import { SuiClientService } from './sui-client.service';
 import { SuiRpcCacheService } from './sui-rpc-cache.service';
 import { SuiSyncPlannerService } from './sui-sync-planner.service';
+import { TokenPriceService } from '../pricing/token-price.service';
 import type {
   SuiCacheKeyParts,
   SuiCoinSnapshot,
@@ -20,8 +21,64 @@ import type {
 interface FetchOptions {
   cursor?: string | null;
   limit?: number;
-  relation?: 'sender' | 'recipient' | 'all';
+  relation?: 'sender' | 'all';
   window?: SuiSyncWindow;
+}
+
+type CoinMetadataSnapshot = {
+  symbol: string;
+  name: string;
+  decimals: number | null;
+};
+
+function fallbackCoinMetadata(coinType: string): CoinMetadataSnapshot {
+  const suffix = coinType.split('::').pop()?.trim() || 'UNKNOWN';
+  const normalizedSymbol = suffix.toUpperCase();
+  if (coinType === '0x2::sui::SUI') {
+    return { symbol: 'SUI', name: 'Sui', decimals: 9 };
+  }
+
+  return {
+    symbol: normalizedSymbol,
+    name: suffix,
+    decimals: null,
+  };
+}
+
+function normalizeCoinMetadata(raw: unknown, coinType: string): CoinMetadataSnapshot {
+  const fallback = fallbackCoinMetadata(coinType);
+  const payload = toRecord(raw);
+  const decimals = toNumber(payload.decimals);
+
+  return {
+    symbol: String(payload.symbol ?? fallback.symbol),
+    name: String(payload.name ?? fallback.name),
+    decimals: typeof decimals === 'number' && Number.isFinite(decimals) ? decimals : fallback.decimals,
+  };
+}
+
+function formatAmountFromRaw(balanceRaw: string, decimals: number | null): { amountHuman: number | null; balanceFormatted: string } {
+  if (decimals === null || decimals < 0) {
+    return {
+      amountHuman: null,
+      balanceFormatted: `${balanceRaw} raw units`,
+    };
+  }
+
+  const negative = balanceRaw.startsWith('-');
+  const digits = balanceRaw.replace('-', '').replace(/^0+(?=\d)/, '') || '0';
+  const padded = digits.padStart(decimals + 1, '0');
+  const integerPart = decimals === 0 ? padded : padded.slice(0, -decimals);
+  const fractionFull = decimals === 0 ? '' : padded.slice(-decimals);
+  const fractionShort = fractionFull.replace(/0+$/, '').slice(0, 4);
+  const formattedNumber = fractionShort ? `${integerPart}.${fractionShort}` : integerPart;
+  const signedValue = `${negative ? '-' : ''}${formattedNumber}`;
+  const amountHuman = Number(signedValue);
+
+  return {
+    amountHuman: Number.isFinite(amountHuman) ? amountHuman : null,
+    balanceFormatted: signedValue,
+  };
 }
 
 @Injectable()
@@ -34,6 +91,7 @@ export class SuiIngestionService {
     private readonly syncPlannerService: SuiSyncPlannerService,
     private readonly databaseService: DatabaseService,
     private readonly suiNormalizationService: SuiNormalizationService,
+    private readonly tokenPriceService: TokenPriceService,
   ) {}
 
   async syncWallet(walletAddress: string, network: SuiNetwork, options: FetchOptions = {}): Promise<SuiWalletSyncSnapshot> {
@@ -85,23 +143,7 @@ export class SuiIngestionService {
     network: SuiNetwork,
     options: FetchOptions = {},
   ): Promise<SuiRpcPage<SuiTransactionSummary>> {
-    if ((options.relation ?? 'all') === 'all') {
-      const [senderPage, recipientPage] = await Promise.all([
-        this.fetchWalletTransactions(walletAddress, network, {
-          ...options,
-          relation: 'sender',
-        }),
-        this.fetchWalletTransactions(walletAddress, network, {
-          ...options,
-          relation: 'recipient',
-        }),
-      ]);
-
-      const merged = this.mergeTransactionPages(senderPage, recipientPage);
-      return merged;
-    }
-
-    const relation: 'sender' | 'recipient' = options.relation === 'recipient' ? 'recipient' : 'sender';
+    const relation: 'sender' = 'sender';
     const cacheKeyParts: SuiCacheKeyParts = {
       chain: network,
       walletAddress,
@@ -137,14 +179,12 @@ export class SuiIngestionService {
   private async queryTransactionBlocksWithFallback(
     walletAddress: string,
     network: SuiNetwork,
-    relation: 'sender' | 'recipient',
+    relation: 'sender',
     cursor: string | undefined,
     limit: number,
   ) {
     const query = {
-      filter: relation === 'sender'
-        ? { FromAddress: walletAddress }
-        : { ToAddress: walletAddress },
+      filter: { FromAddress: walletAddress },
       cursor,
       limit,
       order: 'descending' as const,
@@ -220,26 +260,62 @@ export class SuiIngestionService {
 
     const coinChanges = aggregateCoinChanges(transactions.data, walletAddress);
     const balances = extractArrayPayload(allBalances.data);
+    const metadataByCoinType = await Promise.all(
+      balances.map(async (balance) => {
+        const coinType = String(balance.coinType ?? balance.type ?? 'unknown');
+        try {
+          const metadata = await this.suiRpcCacheService.remember(
+            'coin-metadata',
+            { chain: network, coinType },
+            async () => this.suiClientService.getCoinMetadata(coinType, network),
+            {
+              ttlSeconds: backendEnv.sui.cache.balanceTtlSeconds,
+              staleWhileRevalidateSeconds: backendEnv.sui.cache.staleSeconds,
+            },
+          );
+          return [coinType, normalizeCoinMetadata(metadata.data, coinType)] as const;
+        } catch {
+          return [coinType, fallbackCoinMetadata(coinType)] as const;
+        }
+      }),
+    );
+    const metadataMap = new Map(metadataByCoinType);
 
-    return balances.map((balance) => {
+    return Promise.all(balances.map(async (balance) => {
       const coinType = String(balance.coinType ?? balance.type ?? 'unknown');
-      const valueUsd =
+      const metadata = metadataMap.get(coinType) ?? fallbackCoinMetadata(coinType);
+      const balanceRaw = String(balance.totalBalance ?? balance.balance ?? '0');
+      const { amountHuman, balanceFormatted } = formatAmountFromRaw(balanceRaw, metadata.decimals);
+      const existingValueUsd =
         toNumber(balance.valueUsd) ??
         toNumber(balance.usdValue) ??
         toNumber(balance.totalBalanceUsd) ??
         toNumber(balance.totalBalanceInUsd) ??
         null;
+      const existingPriceUsd = toNumber(balance.priceUsd) ?? null;
+      const symbol = metadata.symbol.toUpperCase();
+      const shouldFetchPrice = existingValueUsd === null || existingPriceUsd === null;
+      const fetchedPrice = shouldFetchPrice ? await this.tokenPriceService.getTokenPrice(symbol, amountHuman) : { valueUsd: null, priceUsd: null };
+      const valueUsd = existingValueUsd ?? fetchedPrice.valueUsd;
+      const priceUsd = existingPriceUsd ?? fetchedPrice.priceUsd ?? (valueUsd !== null && amountHuman !== null && amountHuman > 0 ? valueUsd / amountHuman : null);
       return {
         coinType,
-        balance: String(balance.totalBalance ?? balance.balance ?? '0'),
+        balance: balanceRaw,
+        balanceRaw,
+        balanceFormatted: `${balanceFormatted} ${metadata.symbol}`.trim(),
+        amountHuman,
+        symbol: metadata.symbol,
+        name: metadata.name,
+        decimals: metadata.decimals,
         valueUsd,
+        priceUsd,
         change: coinChanges[coinType] ?? '0',
         isNative: coinType === '0x2::sui::SUI',
         totalCoinObjects: toNumber(balance.coinObjectCount),
         transactionDigest: options.cursor ?? null,
         raw: balance,
       };
-    });
+    }));
   }
 
   async fetchObjectSnapshots(
@@ -334,16 +410,24 @@ export class SuiIngestionService {
     const events = Array.isArray(raw.events?.data) ? raw.events.data : Array.isArray(raw.events) ? raw.events : [];
 
     if (Object.keys(effects).length === 0) {
-      this.logger.warn(`Skipping transaction ${String(raw.digest ?? 'unknown')} for wallet ${walletAddress}: effect is empty.`);
-      return null;
+      this.logger.warn(`Transaction ${String(raw.digest ?? 'unknown')} for wallet ${walletAddress} has empty effects; keeping raw block.`);
     }
 
     const digest = String(raw.digest ?? effects.transactionDigest ?? data.digest ?? `tx-${Date.now()}`);
     const sender = String(data.sender ?? raw.sender ?? '');
     const recipient = resolveRecipient(balanceChanges, walletAddress);
-    const status = normalizeStatus(effects.status ?? raw.status);
+    const status = Object.keys(effects).length === 0 ? normalizeStatus(raw.status) : normalizeStatus(effects.status ?? raw.status);
     const gasFee = normalizeGasFee(effects.gasUsed);
-    const timestampMs = toNumber(raw.timestampMs ?? raw.timestamp);
+    const timestampMs =
+      toNumber(raw.timestampMs) ??
+      toNumber(raw.timestamp) ??
+      toNumber(effects.timestampMs) ??
+      toNumber(effects.timestamp) ??
+      toNumber(transaction.timestampMs) ??
+      toNumber(transaction.timestamp) ??
+      toNumber(data.timestampMs) ??
+      toNumber(data.timestamp) ??
+      null;
 
     return {
       digest,

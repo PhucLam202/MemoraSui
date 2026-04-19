@@ -20,11 +20,13 @@ function ConnectWalletModal({
   isConnecting,
   onConnect,
   walletCount,
+  mounted,
 }: {
   error: string | null;
   isConnecting: boolean;
   onConnect: () => void;
   walletCount: number;
+  mounted: boolean;
 }) {
   return (
     <div
@@ -83,7 +85,9 @@ function ConnectWalletModal({
               lineHeight: 1.5,
             }}
           >
-            {walletCount > 0
+            {!mounted
+              ? 'Checking for Sui wallet extension...'
+              : walletCount > 0
               ? 'A compatible Sui wallet extension was detected. Connect it to continue.'
               : 'No Sui wallet extension is detected in this browser. Install one, then refresh.'}
           </div>
@@ -109,7 +113,7 @@ function ConnectWalletModal({
               variant="primary"
               size="md"
               onClick={onConnect}
-              disabled={isConnecting || walletCount === 0}
+              disabled={!mounted || isConnecting || walletCount === 0}
             >
               {isConnecting ? 'Connecting...' : 'Connect Sui Wallet'}
             </ClayButton>
@@ -124,6 +128,7 @@ export function WalletConnectGate({ children }: WalletConnectGateProps) {
   const [walletState, setWalletState] = useState<WalletSessionState>({ status: 'loading' });
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   const dAppKit = useDAppKit();
   const account = useCurrentAccount();
@@ -132,6 +137,7 @@ export function WalletConnectGate({ children }: WalletConnectGateProps) {
   const wallets = useWallets();
 
   useEffect(() => {
+    setMounted(true);
     const evaluateWallet = () => {
       const session = loadWalletSessionFromStorage();
       const hasConnectedWallet =
@@ -239,6 +245,7 @@ export function WalletConnectGate({ children }: WalletConnectGateProps) {
             void handleConnectWallet();
           }}
           walletCount={wallets.length}
+          mounted={mounted}
         />
       ) : null}
     </>

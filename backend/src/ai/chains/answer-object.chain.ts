@@ -12,6 +12,7 @@ export class AnswerObjectChain {
     const topType = objectSummary.byType[0];
 
     return {
+      chainUsed: 'AnswerObjectChain',
       text: [
         objectPrompt(),
         `The wallet currently tracks ${objectSummary.totalObjects} objects.`,

@@ -30,6 +30,7 @@ function mapTxToActivity(tx: TxItem): ActivityData {
     id: tx.id ?? tx.digest ?? crypto.randomUUID(),
     txHash: tx.digest,
     date: tx.timestampMs ? new Date(tx.timestampMs).toLocaleString() : 'Unknown',
+    timestampMs: tx.timestampMs ?? null,
     type,
     protocol: 'Sui',
     amount: tx.digest ? `${tx.digest.slice(0, 10)}...` : 'N/A',
@@ -60,12 +61,26 @@ export default function ActivityPage() {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetchApi<PaginationResult<TxItem>>(`/data/wallets/${walletAddress}/transactions`, {
-          network: networkName,
-          limit: 100,
-          page: 1,
-        });
-        setItems((response.items ?? []).map(mapTxToActivity));
+        const limit = 100;
+        const allItems: TxItem[] = [];
+        let page = 1;
+
+        while (true) {
+          const nextPage = await fetchApi<PaginationResult<TxItem>>(`/data/wallets/${walletAddress}/transactions`, {
+            network: networkName,
+            limit,
+            page,
+          });
+
+          const pageItems = nextPage.items ?? [];
+          allItems.push(...pageItems);
+          if (pageItems.length < limit) {
+            break;
+          }
+          page += 1;
+        }
+
+        setItems(allItems.map(mapTxToActivity));
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load activity.');
       } finally {
@@ -77,23 +92,32 @@ export default function ActivityPage() {
   }, [walletAddress, networkName]);
 
   const filteredItems = useMemo(() => {
+    const now = Date.now();
+    const rangeMs =
+      dateRange === 'Last 7 Days' ? 7 * 24 * 60 * 60 * 1000 :
+      dateRange === 'Last 30 Days' ? 30 * 24 * 60 * 60 * 1000 :
+      dateRange === 'Last 90 Days' ? 90 * 24 * 60 * 60 * 1000 :
+      null;
+
     return items.filter((item) => {
+      const timestampMs = item.timestampMs ?? null;
+      const matchesDate = rangeMs === null || timestampMs === null || timestampMs >= now - rangeMs;
       const matchesProtocol = protocol === 'All Protocols' || item.protocol === protocol;
       const q = searchQuery.toLowerCase();
       const matchesSearch = !q || item.type.toLowerCase().includes(q) || item.protocol.toLowerCase().includes(q) || item.txHash?.toLowerCase().includes(q);
-      return matchesProtocol && matchesSearch;
+      return matchesDate && matchesProtocol && matchesSearch;
     });
-  }, [items, protocol, searchQuery]);
+  }, [dateRange, items, protocol, searchQuery]);
 
   return (
     <MainLayout activePath="/activity">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)', width: '100%' }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-md)' }}>
           <div>
-            <h1 style={{ fontSize: '2.5rem', marginBottom: '8px', letterSpacing: '-0.02em' }}>Activity</h1>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>Transaction blocks with status and filters.</p>
+            <h1 style={{ fontSize: '3rem', marginBottom: '12px', letterSpacing: '-0.02em', lineHeight: 1.1 }}>Activity</h1>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '1.15rem' }}>Transaction blocks with status and filters.</p>
           </div>
-          <div style={{ color: 'var(--text-secondary)' }}>{dateRange}</div>
+          <div style={{ color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.95rem', paddingBottom: '4px' }}>{dateRange}</div>
         </header>
 
         {error && (

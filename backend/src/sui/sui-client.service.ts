@@ -75,6 +75,15 @@ export class SuiClientService {
     );
   }
 
+  async getCoinMetadata(coinType: string, network: SuiNetwork = backendEnv.network) {
+    const client = this.getClient(network);
+    return this.execute('getCoinMetadata', () =>
+      client.getCoinMetadata({
+        coinType,
+      } as never),
+    );
+  }
+
   async getCoins(owner: string, cursor?: string | null, limit?: number, network: SuiNetwork = backendEnv.network) {
     const client = this.getClient(network);
     return this.execute('getCoins', () =>

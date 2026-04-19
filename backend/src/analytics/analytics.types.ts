@@ -38,8 +38,17 @@ export interface NormalizedWalletEvent {
 export interface WalletPortfolioAssetSummary {
   coinType: string;
   balance: string;
+  balanceRaw: string;
+  balanceFormatted: string;
+  amountHuman: number | null;
+  symbol: string;
+  name: string;
+  decimals: number | null;
   valueUsd: number | null;
+  priceUsd: number | null;
   isNative: boolean;
+  totalCoinObjects: number | null;
+  sharePct: number | null;
 }
 
 export interface WalletObjectSummaryItem {
@@ -49,8 +58,12 @@ export interface WalletObjectSummaryItem {
 
 export interface WalletPortfolioSummary {
   totalWalletValueUsd: number | null;
+  holdingCount: number;
+  hasUsdValues: boolean;
   topAssets: WalletPortfolioAssetSummary[];
   coinDistribution: Array<WalletPortfolioAssetSummary & { share: number | null }>;
+  holdings: WalletPortfolioAssetSummary[];
+  nativeBalance: WalletPortfolioAssetSummary | null;
   objectSummary: {
     totalObjects: number;
     byState: Record<string, number>;
@@ -65,6 +78,8 @@ export interface WalletActivitySummary {
   incomingCount: number;
   outgoingCount: number;
   activeDays: number;
+  recentTxCount: number;
+  lastActiveAt: number | null;
   protocolUsage: Array<{ protocol: string; count: number; actions: Record<string, number> }>;
 }
 

@@ -176,10 +176,11 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children, activePath }) 
         {/* Main Content Area */}
         <main className="main-content" style={{
           flex: 1,
-          padding: 'var(--spacing-lg) var(--spacing-xl)', /* Reduced top padding since header is sticky */
-          maxWidth: '1340px',
+          padding: 'var(--spacing-lg) var(--spacing-xl)',
+          maxWidth: '1440px', /* Increased slightly for better widescreen layout */
           width: '100%',
           margin: '0 auto',
+          position: 'relative',
           filter: shouldBlockApp ? 'blur(2px)' : 'none',
           pointerEvents: shouldBlockApp ? 'none' : 'auto',
           userSelect: shouldBlockApp ? 'none' : 'auto',

@@ -13,7 +13,8 @@ import {
   formatSuiBalanceFromMist,
   formatWalletAddress,
 } from '@/lib/wallet-format';
-import { LogOut } from 'lucide-react';
+import { fetchApi, formatUsd } from '@/lib/api-client';
+import { LogOut, TrendingUp } from 'lucide-react';
 
 type HeaderBalanceState =
   | { status: 'idle' }
@@ -48,6 +49,7 @@ export function HeaderWalletInfo() {
   });
 
   const [balanceState, setBalanceState] = useState<HeaderBalanceState>({ status: 'idle' });
+  const [suiPrice, setSuiPrice] = useState<number | null>(null);
 
   const resolvedAddress = currentAccount?.address ?? session?.address;
   const isVerified = session?.status === 'verified';
@@ -80,6 +82,29 @@ export function HeaderWalletInfo() {
       isCancelled = true;
     };
   }, [currentClient, currentAccount?.address]);
+  
+  useEffect(() => {
+    let isCancelled = false;
+    
+    const fetchPrice = async () => {
+      try {
+        const data = await fetchApi<{ priceUsd: number | null }>('/pricing/price', { symbol: 'SUI' });
+        if (!isCancelled) {
+          setSuiPrice(data.priceUsd);
+        }
+      } catch (err) {
+        console.error('Failed to fetch SUI price:', err);
+      }
+    };
+    
+    void fetchPrice();
+    const interval = setInterval(fetchPrice, 60000); // Update every minute
+    
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   const balanceText = useMemo(() => {
     if (balanceState.status === 'loading') return 'Loading...';
@@ -99,6 +124,14 @@ export function HeaderWalletInfo() {
       <div className="wallet-chip">
         <span className="wallet-chip-label">Address</span>
         <strong>{formatWalletAddress(resolvedAddress)}</strong>
+      </div>
+
+      <div className="wallet-chip">
+        <span className="wallet-chip-label">SUI Price</span>
+        <strong style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <TrendingUp size={14} className="price-icon" />
+          {formatUsd(suiPrice)}
+        </strong>
       </div>
 
       <div className="wallet-chip">
@@ -136,6 +169,10 @@ export function HeaderWalletInfo() {
           min-width: 0;
           flex-wrap: wrap;
           justify-content: flex-end;
+        }
+
+        .price-icon {
+          color: #10b981;
         }
 
         .disconnect-btn {

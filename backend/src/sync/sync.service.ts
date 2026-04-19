@@ -53,6 +53,8 @@ export class SyncService {
         retryCount: 0,
       });
 
+      await this.scheduleRepeatSyncJob(wallet.id, wallet.address);
+
       const queue = this.queueService.getQueue();
       if (!queue) {
         this.logger.warn(`Queue is unavailable, job created but not enqueued: ${job.id}`);
@@ -324,6 +326,26 @@ export class SyncService {
     }
 
     return this.mapSyncJob(updated.toObject<Record<string, unknown>>());
+  }
+
+  private async scheduleRepeatSyncJob(walletId: string, walletAddress: string) {
+    const queue = this.queueService.getQueue();
+    if (!queue) {
+      return;
+    }
+
+    await queue.add(
+      'wallet-sync-repeat',
+      { walletId, walletAddress },
+      {
+        jobId: `wallet-sync-repeat:${walletId}`,
+        repeat: {
+          every: 60_000,
+        },
+        removeOnComplete: true,
+        removeOnFail: 10,
+      },
+    );
   }
 
   private async updateWallet(walletId: string, patch: Record<string, unknown>) {

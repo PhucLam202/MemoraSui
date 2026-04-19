@@ -72,6 +72,32 @@ async function bootstrap() {
   const worker = new Worker(
     env.QUEUE_NAME,
     async (job) => {
+      const jobName = String(job.name ?? '');
+      if (jobName === 'wallet-sync-repeat') {
+        const walletId = String(job.data?.walletId ?? '');
+        if (!walletId) {
+          throw new Error('Repeat job payload is missing walletId.');
+        }
+
+        log('info', 'Worker processing repeat sync job.', { walletId, queue: env.QUEUE_NAME });
+        const backendUrl = env.BACKEND_INTERNAL_URL.replace(/\/+$/, '');
+        const response = await fetch(`${backendUrl}/sync/wallets/${walletId}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-worker-token': 'internal',
+          },
+          body: JSON.stringify({ walletId }),
+        });
+
+        if (!response.ok) {
+          const detail = await response.text();
+          throw new Error(`Backend repeat sync failed with ${response.status}: ${detail}`);
+        }
+
+        return response.json();
+      }
+
       const jobId = String(job.data?.jobId ?? job.id ?? '');
       if (!jobId) {
         throw new Error('Job payload is missing jobId.');

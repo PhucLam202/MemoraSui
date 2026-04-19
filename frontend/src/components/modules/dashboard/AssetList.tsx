@@ -9,15 +9,15 @@ interface Asset {
 
 export const AssetList: React.FC<{ assets: Asset[] }> = ({ assets }) => {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
       {assets.map((asset, i) => (
         <div key={i} style={{ 
           display: 'flex', 
           alignItems: 'center', 
           justifyContent: 'space-between',
-          padding: '12px 16px',
+          padding: '8px 12px',
           backgroundColor: 'var(--white)',
-          borderRadius: '16px',
+          borderRadius: '12px',
           boxShadow: 'var(--shadow-outer)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

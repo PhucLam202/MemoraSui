@@ -10,8 +10,10 @@ export class AnswerFeeChain {
   async run(input: { walletAddress: string; network?: SuiNetwork; recalledMemories: string[] }) {
     const feeSummary = await this.getFeeSummaryTool.run(input.walletAddress, input.network);
     const topFee = feeSummary.topTransactions[0];
+    const txUrl = topFee ? `https://suivision.xyz/txblock/${topFee.digest}` : undefined;
 
     return {
+      chainUsed: 'AnswerFeeChain',
       text: [
         feePrompt(),
         `Total tracked fee is ${feeSummary.totalFee} with average fee ${feeSummary.averageFee.toFixed(4)}.`,
@@ -20,7 +22,21 @@ export class AnswerFeeChain {
       ]
         .filter(Boolean)
         .join(' '),
-      toolCalls: [{ tool: 'getFeeSummary', status: 'success', summary: `Loaded ${feeSummary.topTransactions.length} fee transactions.` }],
+      toolCalls: [
+        {
+          tool: 'getFeeSummary',
+          status: 'success',
+          summary: `Loaded ${feeSummary.topTransactions.length} fee transactions.`,
+          links: topFee
+            ? [
+                {
+                  label: 'Open transaction on SuiVision',
+                  url: txUrl,
+                },
+              ]
+            : undefined,
+        },
+      ],
       memoryCandidates: [`User asked about wallet fee usage. Total fee ${feeSummary.totalFee}.`],
     };
   }

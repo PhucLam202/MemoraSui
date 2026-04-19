@@ -59,7 +59,14 @@ export interface SuiTransactionSummary {
 export interface SuiCoinSnapshot {
   coinType: string;
   balance: string;
+  balanceRaw: string;
+  balanceFormatted: string;
+  amountHuman: number | null;
+  symbol: string;
+  name: string;
+  decimals: number | null;
   valueUsd?: number | null;
+  priceUsd?: number | null;
   change?: string;
   isNative: boolean;
   totalCoinObjects?: number;

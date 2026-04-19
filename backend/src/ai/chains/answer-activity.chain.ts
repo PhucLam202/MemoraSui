@@ -17,6 +17,7 @@ export class AnswerActivityChain {
     const topProtocol = protocols.topProtocols[0];
 
     return {
+      chainUsed: 'AnswerActivityChain',
       text: [
         activityPrompt(),
         `The wallet has ${activity.activeDays} active days, ${activity.incomingCount} incoming actions, and ${activity.outgoingCount} outgoing actions in the indexed range.`,
@@ -26,8 +27,24 @@ export class AnswerActivityChain {
         .filter(Boolean)
         .join(' '),
       toolCalls: [
-        { tool: 'getActivitySummary', status: 'success', summary: `Loaded ${activity.txCountByDay.length} daily activity buckets.` },
-        { tool: 'getProtocolUsage', status: 'success', summary: `Loaded ${protocols.topProtocols.length} protocol entries.` },
+        {
+          tool: 'getActivitySummary',
+          status: 'success',
+          summary: `Loaded ${activity.txCountByDay.length} daily activity buckets.`,
+        },
+        {
+          tool: 'getProtocolUsage',
+          status: 'success',
+          summary: `Loaded ${protocols.topProtocols.length} protocol entries.`,
+          links: topProtocol
+            ? [
+                {
+                  label: 'Search protocol on SuiVision',
+                  url: `https://suivision.xyz/search?q=${encodeURIComponent(topProtocol.protocol)}`,
+                },
+              ]
+            : undefined,
+        },
       ],
       memoryCandidates: topProtocol ? [`Wallet often interacts with ${topProtocol.protocol}.`] : [],
     };

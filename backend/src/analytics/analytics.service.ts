@@ -13,6 +13,7 @@ import type {
 import type { SuiNetwork } from '../sui/sui.types';
 import { SuiIngestionService } from '../sui/sui-ingestion.service';
 import { SuiNormalizationService } from '../sui/sui-normalization.service';
+import { TokenPriceService } from '../pricing/token-price.service';
 
 @Injectable()
 export class AnalyticsService {
@@ -22,6 +23,7 @@ export class AnalyticsService {
     private readonly databaseService: DatabaseService,
     private readonly suiIngestionService: SuiIngestionService,
     private readonly suiNormalizationService: SuiNormalizationService,
+    private readonly tokenPriceService: TokenPriceService,
   ) {}
 
   async getWalletSnapshot(walletAddress: string, network: SuiNetwork = backendEnv.network, range: WalletAnalyticsRange = { startMs: null, endMs: null }) {
@@ -128,18 +130,26 @@ export class AnalyticsService {
       );
     }
 
-    return this.buildAnalyticsSnapshot(walletAddress, network, balances, objects, events, transactions);
+    const normalizedEvents = events.length > 0 || transactions.length === 0
+      ? events
+      : this.suiNormalizationService.normalizeTransactions(
+          transactions as unknown as Parameters<SuiNormalizationService['normalizeTransactions']>[0],
+          walletAddress,
+          network,
+        );
+
+    return this.buildAnalyticsSnapshot(walletAddress, network, balances, objects, normalizedEvents, transactions);
   }
 
-  private buildAnalyticsSnapshot(
+  private async buildAnalyticsSnapshot(
     walletAddress: string,
     network: SuiNetwork,
     balances: Record<string, unknown>[],
     objects: Record<string, unknown>[],
     events: NormalizedWalletEvent[],
     transactions: Record<string, unknown>[],
-  ): WalletAnalyticsSnapshot {
-    const portfolio = buildPortfolioSummary(balances, objects);
+  ): Promise<WalletAnalyticsSnapshot> {
+    const portfolio = buildPortfolioSummary(await this.enrichBalancesWithPrices(balances), objects);
     const activity = buildActivitySummary(events);
     const fees = buildFeeSummary(transactions);
     const protocols = buildProtocolSummary(events);
@@ -159,6 +169,31 @@ export class AnalyticsService {
       fees,
       protocols,
     };
+  }
+
+  private async enrichBalancesWithPrices(balances: Record<string, unknown>[]) {
+    return Promise.all(
+      balances.map(async (balance) => {
+        const currentValueUsd = numberOrNull(balance.valueUsd);
+        const currentPriceUsd = numberOrNull(balance.priceUsd);
+        if (currentValueUsd !== null || currentPriceUsd !== null) {
+          return balance;
+        }
+
+        const symbol = coinTypeToSymbol(String(balance.coinType ?? 'unknown')).toUpperCase();
+        if (symbol !== 'SUI' && symbol !== 'WAL') {
+          return balance;
+        }
+
+        const amountHuman = numberOrNull(balance.amountHuman);
+        const price = await this.tokenPriceService.getTokenPrice(symbol, amountHuman);
+        return {
+          ...balance,
+          valueUsd: price.valueUsd,
+          priceUsd: price.priceUsd,
+        };
+      }),
+    );
   }
 
   private hasUsableSnapshotSource(source: unknown) {
@@ -261,26 +296,70 @@ function buildPortfolioSummary(
   balances: Record<string, unknown>[],
   objects: Record<string, unknown>[],
 ): WalletPortfolioSummary {
-  const normalizedBalances = balances.map((balance) => ({
-    coinType: String(balance.coinType ?? 'unknown'),
-    balance: String(balance.balance ?? '0'),
-    valueUsd: numberOrNull(balance.valueUsd),
-    isNative: Boolean(balance.isNative),
-  }));
+  const balanceMap = new Map<string, Record<string, unknown>>();
+  for (const balance of balances) {
+    const coinType = String(balance.coinType ?? 'unknown');
+    const existing = balanceMap.get(coinType);
+    if (!existing) {
+      balanceMap.set(coinType, balance);
+      continue;
+    }
+
+    const existingAmount = numberOrNull(existing.amountHuman) ?? 0;
+    const nextAmount = numberOrNull(balance.amountHuman) ?? 0;
+    if (nextAmount >= existingAmount) {
+      balanceMap.set(coinType, balance);
+    }
+  }
+
+  const normalizedBalances = [...balanceMap.values()].map((balance) => {
+    const coinType = String(balance.coinType ?? 'unknown');
+    const isNative = Boolean(balance.isNative);
+    const balanceRaw = String(balance.balanceRaw ?? balance.balance ?? '0');
+    const decimals = numberOrNull(balance.decimals) ?? (isNative ? 9 : null);
+    const symbol = String(balance.symbol ?? coinTypeToSymbol(coinType));
+    const name = String(balance.name ?? (isNative ? 'Sui' : coinType.split('::').pop() ?? coinType));
+    const amountHuman = numberOrNull(balance.amountHuman) ?? formatRawBalanceToHumanNumber(balanceRaw, decimals);
+    const valueUsd = numberOrNull(balance.valueUsd) ?? null;
+    const priceUsd = numberOrNull(balance.priceUsd) ?? (valueUsd !== null && amountHuman !== null && amountHuman > 0 ? valueUsd / amountHuman : null);
+    const existingFormatted = typeof balance.balanceFormatted === 'string' ? balance.balanceFormatted : null;
+
+    return {
+      coinType,
+      balance: String(balance.balance ?? balanceRaw),
+      balanceRaw,
+      balanceFormatted:
+        existingFormatted && !/raw units/i.test(existingFormatted)
+          ? existingFormatted
+          : formatRawBalanceToDisplay(balanceRaw, decimals, symbol),
+      amountHuman,
+      symbol,
+      name,
+      decimals,
+      valueUsd,
+      priceUsd,
+      isNative,
+      totalCoinObjects: numberOrNull(balance.totalCoinObjects),
+      sharePct: null,
+    };
+  });
 
   const totalWalletValueUsd = sumNumbers(normalizedBalances.map((balance) => balance.valueUsd));
-  const topAssets = [...normalizedBalances]
-    .sort((left, right) => compareNumbers(right.valueUsd, left.valueUsd) || compareBigInts(right.balance, left.balance))
-    .slice(0, 10);
-
-  const totalBalanceWeight = normalizedBalances.reduce((total, balance) => total + absBigInt(balance.balance), 0n);
-  const coinDistribution = normalizedBalances.map((balance) => {
-    const share = totalBalanceWeight > 0n ? Number(absBigInt(balance.balance)) / Number(totalBalanceWeight) : null;
+  const hasUsdValues = normalizedBalances.some((balance) => balance.valueUsd !== null);
+  const totalBalanceWeightHuman = normalizedBalances.reduce((total, balance) => total + (balance.amountHuman ?? 0), 0);
+  const holdings = normalizedBalances.map((balance) => {
+    const share = totalBalanceWeightHuman > 0 ? (balance.amountHuman ?? 0) / totalBalanceWeightHuman : null;
     return {
       ...balance,
       share,
+      sharePct: share !== null ? share * 100 : null,
     };
   });
+  const topAssets = [...holdings]
+    .sort((left, right) => compareNumbers(right.valueUsd, left.valueUsd) || compareBigInts(right.balance, left.balance))
+    .slice(0, 10);
+  const coinDistribution = holdings.map((balance) => ({ ...balance }));
+  const nativeBalance = holdings.find((balance) => balance.isNative) ?? null;
 
   const byState = objects.reduce<Record<string, number>>((accumulator, object) => {
     const state = String(object.state ?? 'unknown');
@@ -301,8 +380,12 @@ function buildPortfolioSummary(
 
   return {
     totalWalletValueUsd,
+    holdingCount: normalizedBalances.length,
+    hasUsdValues,
     topAssets,
     coinDistribution,
+    holdings,
+    nativeBalance,
     objectSummary: {
       totalObjects: objects.length,
       byState,
@@ -319,10 +402,12 @@ function buildActivitySummary(events: NormalizedWalletEvent[]): WalletActivitySu
   const activeDays = new Set<string>();
   let incomingCount = 0;
   let outgoingCount = 0;
+  let lastActiveAt: number | null = null;
 
   for (const event of events) {
     const timestamp = event.timestampMs ?? null;
     if (timestamp !== null) {
+      lastActiveAt = lastActiveAt === null ? timestamp : Math.max(lastActiveAt, timestamp);
       const date = new Date(timestamp);
       const dayKey = date.toISOString().slice(0, 10);
       const weekKey = getWeekKey(date);
@@ -364,8 +449,50 @@ function buildActivitySummary(events: NormalizedWalletEvent[]): WalletActivitySu
     incomingCount,
     outgoingCount,
     activeDays: activeDays.size,
+    recentTxCount: events.length,
+    lastActiveAt,
     protocolUsage: [...protocolUsage.values()].sort((left, right) => right.count - left.count),
   };
+}
+
+function coinTypeToSymbol(coinType: string) {
+  if (coinType === '0x2::sui::SUI') {
+    return 'SUI';
+  }
+
+  if (coinType.toLowerCase().includes('wal')) {
+    return 'WAL';
+  }
+
+  return coinType.split('::').pop()?.toUpperCase() || 'UNKNOWN';
+}
+
+function formatRawBalanceToHumanNumber(balanceRaw: string, decimals: number | null) {
+  if (decimals === null || decimals < 0) {
+    return null;
+  }
+
+  const negative = balanceRaw.startsWith('-');
+  const digits = balanceRaw.replace('-', '').replace(/^0+(?=\d)/, '') || '0';
+  const padded = digits.padStart(decimals + 1, '0');
+  const integerPart = decimals === 0 ? padded : padded.slice(0, -decimals);
+  const fractionFull = decimals === 0 ? '' : padded.slice(-decimals);
+  const normalized = `${negative ? '-' : ''}${integerPart}${fractionFull ? `.${fractionFull}` : ''}`;
+  const numeric = Number(normalized);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function formatRawBalanceToDisplay(balanceRaw: string, decimals: number | null, symbol: string) {
+  const amountHuman = formatRawBalanceToHumanNumber(balanceRaw, decimals);
+  if (amountHuman === null) {
+    return `${balanceRaw} raw units ${symbol}`.trim();
+  }
+
+  const formatted = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  }).format(amountHuman);
+  return `${formatted} ${symbol}`.trim();
 }
 
 function buildFeeSummary(transactions: Record<string, unknown>[]): WalletFeeSummary {

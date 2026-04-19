@@ -24,7 +24,37 @@ export const CoinBalanceSchema = new Schema(
       type: String,
       required: true,
     },
+    balanceRaw: {
+      type: String,
+      required: false,
+    },
+    balanceFormatted: {
+      type: String,
+      required: false,
+    },
+    amountHuman: {
+      type: Number,
+      required: false,
+    },
+    symbol: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+    name: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+    decimals: {
+      type: Number,
+      required: false,
+    },
     valueUsd: {
+      type: Number,
+      required: false,
+    },
+    priceUsd: {
       type: Number,
       required: false,
     },

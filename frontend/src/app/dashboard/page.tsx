@@ -7,7 +7,7 @@ import { StatCard } from '@/components/modules/dashboard/StatCard';
 import { AssetList } from '@/components/modules/dashboard/AssetList';
 import { WalletConnectGate } from '@/components/modules/dashboard/WalletConnectGate';
 import { ClayCard } from '@/components/shared/ClayCard';
-import { fetchApi, formatSui, formatUsd } from '@/lib/api-client';
+import { fetchApi, formatSui, formatTokenAmount, formatUsd } from '@/lib/api-client';
 import { loadWalletSessionFromStorage } from '@/lib/wallet-session';
 import { 
   History, 
@@ -24,7 +24,14 @@ import {
 
 type PortfolioSummary = {
   totalWalletValueUsd: number | null;
-  topAssets: Array<{ coinType: string; balance: string; valueUsd: number | null }>;
+  topAssets: Array<{ 
+    coinType: string; 
+    balance: string; 
+    amountHuman: number | null;
+    symbol: string;
+    decimals: number | null;
+    valueUsd: number | null 
+  }>;
   objectSummary: { totalObjects: number };
 };
 
@@ -78,9 +85,9 @@ export default function DashboardPage() {
 
   const topAssets = useMemo(
     () =>
-      (portfolio?.topAssets ?? []).slice(0, 5).map((asset) => ({
-        name: asset.coinType.split('::').pop() ?? asset.coinType,
-        amount: formatSui(asset.balance),
+      (portfolio?.topAssets ?? []).slice(0, 8).map((asset) => ({
+        name: asset.symbol || asset.coinType.split('::').pop() || asset.coinType,
+        amount: formatTokenAmount(asset.amountHuman, asset.decimals ?? 0, asset.symbol),
         valueUsd: formatUsd(asset.valueUsd),
       })),
     [portfolio],
@@ -89,11 +96,11 @@ export default function DashboardPage() {
   return (
     <MainLayout activePath="/dashboard">
       <WalletConnectGate>
-        <div className="dashboard-container" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)' }}>
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div className="dashboard-container" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)', width: '100%' }}>
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-md)' }}>
             <div>
-              <h1 style={{ fontSize: '2.5rem', marginBottom: '8px', letterSpacing: '-0.02em' }}>Good Morning!</h1>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
+              <h1 style={{ fontSize: '3rem', marginBottom: '12px', letterSpacing: '-0.02em', lineHeight: 1.1 }}>Good Morning!</h1>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '1.15rem' }}>
                 Your portfolio is looking healthy on <span style={{ color: 'var(--matcha-accent)', fontWeight: 700 }}>{networkName}</span>.
               </p>
             </div>
@@ -114,31 +121,30 @@ export default function DashboardPage() {
           {/* Key Stats Section */}
           <section className="highlights-grid">
             <div className="highlight-card main-balance">
-               <ClayCard padding="lg" style={{ height: '100%', background: 'linear-gradient(135deg, var(--matcha-primary), var(--matcha-accent))', color: 'white' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                    <div className="icon-circle" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}><Wallet size={24} /></div>
-                    <ShieldCheck size={24} style={{ opacity: 0.6 }} />
+               <ClayCard padding="md" style={{ height: '100%', background: 'linear-gradient(135deg, var(--matcha-primary), var(--matcha-accent))', color: 'white', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <div className="icon-circle mini" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}><Wallet size={20} /></div>
+                    <ShieldCheck size={20} style={{ opacity: 0.6 }} />
                   </div>
-                  <div style={{ fontSize: '0.9rem', opacity: 0.9, fontWeight: 600 }}>Total Wallet Value</div>
-                  <div style={{ fontSize: '2.8rem', fontWeight: 700, margin: '8px 0' }}>{loading ? '...' : formatUsd(portfolio?.totalWalletValueUsd)}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem' }}>
-                    <span style={{ padding: '4px 8px', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: '8px' }}>+2.4%</span>
+                  <div style={{ fontSize: '0.85rem', opacity: 0.9, fontWeight: 600 }}>Total Wallet Value</div>
+                  <div style={{ fontSize: '2.4rem', fontWeight: 700, margin: '4px 0' }}>{loading ? '...' : formatUsd(portfolio?.totalWalletValueUsd)}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
+                    <span style={{ padding: '2px 6px', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: '6px' }}>+2.4%</span>
                     <span style={{ opacity: 0.8 }}>Past 24h</span>
                   </div>
                </ClayCard>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--spacing-md)' }}>
+            <div className="stats-subgrid">
               <StatCard 
                  label="Transactions" 
                  value={loading ? '...' : String((activity?.incomingCount ?? 0) + (activity?.outgoingCount ?? 0))} 
-                 trend={activity?.activeDays ? `${activity.activeDays} Active Days` : undefined}
-                 chartPlaceholder
+                 trend={activity?.activeDays ? `${activity.activeDays} Days` : undefined}
               />
               <StatCard 
-                 label="Total Assets" 
+                 label="Assets" 
                  value={loading ? '...' : String(portfolio?.topAssets?.length ?? 0)} 
-                 trend="Tokens Found"
+                 trend="Found"
               />
             </div>
           </section>
@@ -200,14 +206,21 @@ export default function DashboardPage() {
       <style jsx>{`
         .highlights-grid {
           display: grid;
-          grid-template-columns: 1.2fr 1fr;
-          gap: var(--spacing-lg);
+          grid-template-columns: 1fr 1fr;
+          gap: var(--spacing-md);
+          margin-bottom: var(--spacing-sm);
+        }
+
+        .stats-subgrid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: var(--spacing-md);
         }
 
         .main-content-grid {
           display: grid;
-          grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
-          gap: var(--spacing-lg);
+          grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
+          gap: var(--spacing-md);
         }
 
         .sync-badge {
@@ -230,6 +243,11 @@ export default function DashboardPage() {
           display: flex;
           align-items: center;
           justify-content: center;
+        }
+        .icon-circle.mini {
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
         }
         .icon-circle.small {
           width: 36px;

@@ -8,6 +8,7 @@ export type ActivityType = 'Swap' | 'Send' | 'Stake' | 'Receive';
 export interface ActivityData {
   id: string;
   date: string;
+  timestampMs?: number | null;
   type: ActivityType;
   protocol: string;
   amount: string;

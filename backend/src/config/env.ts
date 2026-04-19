@@ -43,6 +43,11 @@ const backendEnvSchema = z.object({
   AUTH_REFRESH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(60),
   AUTH_REPLAY_WINDOW_SECONDS: z.coerce.number().int().positive().default(600),
   AI_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(120),
+  OPENAI_ENABLED: booleanFlag.default(false),
+  OPENAI_API_KEY: z.string().default(''),
+  OPENAI_MODEL: z.string().min(1).default('gpt-4.1-mini'),
+  OPENAI_BASE_URL: z.string().url().default('https://api.openai.com'),
+  OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
   MEMWAL_ENABLED: booleanFlag.default(false),
   MEMWAL_KEY: z.string().default(''),
   MEMWAL_ACCOUNT_ID: z.string().default(''),
@@ -95,6 +100,13 @@ export const backendEnv = {
   },
   ai: {
     rateLimitPerMinute: parsedEnv.AI_RATE_LIMIT_PER_MINUTE,
+  },
+  openai: {
+    enabled: parsedEnv.OPENAI_ENABLED,
+    apiKey: parsedEnv.OPENAI_API_KEY,
+    model: parsedEnv.OPENAI_MODEL,
+    baseUrl: parsedEnv.OPENAI_BASE_URL,
+    timeoutMs: parsedEnv.OPENAI_TIMEOUT_MS,
   },
   memwal: {
     enabled: parsedEnv.MEMWAL_ENABLED,

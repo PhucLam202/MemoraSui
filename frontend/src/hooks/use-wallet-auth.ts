@@ -222,6 +222,18 @@ export function useWalletAuth({ appName, apiBaseUrl }: UseWalletAuthOptions) {
     }
   }, [apiBaseUrl]);
 
+  useEffect(() => {
+    if (!isHydrated || session?.status !== 'verified') {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void handleSyncWallet(session);
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [handleSyncWallet, isHydrated, session]);
+
   // Auto-auth logic
   useEffect(() => {
     if (!isHydrated || isBusy || !account || !currentWallet) return;
