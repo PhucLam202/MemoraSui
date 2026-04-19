@@ -34,7 +34,7 @@ export class ClassifyQuestionChain {
     if (/(research|project|tokenomics|news|sentiment|market cap|tvl|whale|competitor|comparison|compare|outlook|roadmap|whitepaper|fundamentals|supply|total supply|circulating supply|max supply|wallet supply|walrus)/.test(normalized)) {
       return 'research';
     }
-    if (/(portfolio|balance|balances|asset|assets|holding|holdings|token|tokens|coin|coins|holdings count|wallet value|danh mục|số dư|tài sản|số tiền|so tien|bao nhiêu token|bao nhieu token)/.test(normalized)) {
+    if (/(portfolio|balance|balances|asset|assets|holding|holdings|token|tokens|coin|coins|holdings count|wallet value|danh mục|số dư|tài sản|số tiền|so tien|bao nhiêu token|bao nhieu token|\bsui\b|\bwal\b)/.test(normalized)) {
       return 'portfolio';
     }
     if (/(summary|overview|wallet|tổng quan|ví|tài khoản)/.test(normalized)) {

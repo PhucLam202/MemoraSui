@@ -187,8 +187,12 @@ export class SuiIngestionService {
     cursor: string | undefined,
     limit: number,
   ) {
+    const filter =
+      relation === 'sender'
+        ? { sentAddress: walletAddress }
+        : { affectedAddress: walletAddress };
     const query = {
-      filter: { FromAddress: walletAddress },
+      filter,
       cursor,
       limit,
       order: 'descending' as const,
