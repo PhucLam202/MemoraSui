@@ -39,7 +39,7 @@ export class WalletService {
       network: input.network ?? 'testnet',
       label: input.label?.trim() || undefined,
       userId: input.userId?.trim() || undefined,
-      isPrimary: input.isPrimary ?? true,
+      isPrimary: input.isPrimary ?? Boolean(input.userId?.trim()),
       lastAuthenticatedAt: null,
       lastSyncedAt: null,
       syncCursor: null,

@@ -29,6 +29,9 @@ function maskSensitive(value: string) {
 }
 
 function log(level: 'info' | 'warn' | 'error', message: string, payload?: Record<string, unknown>) {
+  if (level === 'info') {
+    return;
+  }
   const line = JSON.stringify({
     level,
     message: maskSensitive(message),

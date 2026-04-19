@@ -27,10 +27,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
       ? exception.message
       : 'Internal server error';
 
-    this.logger.error(
-      `FAIL ${request.method} ${redactSensitive(request.originalUrl)} ${statusCode} correlationId=${request.correlationId ?? 'n/a'} message=${message}`,
-      isHttpException && exception instanceof Error ? exception.stack : undefined,
-    );
+    if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      this.logger.error(
+        `FAIL ${request.method} ${redactSensitive(request.originalUrl)} ${statusCode} correlationId=${request.correlationId ?? 'n/a'} message=${message}`,
+        isHttpException && exception instanceof Error ? exception.stack : undefined,
+      );
+    }
 
     response.status(statusCode).json({
       success: false,

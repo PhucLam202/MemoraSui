@@ -38,10 +38,14 @@ function fallbackCoinMetadata(coinType: string): CoinMetadataSnapshot {
     return { symbol: 'SUI', name: 'Sui', decimals: 9 };
   }
 
+  if (normalizedSymbol === 'WAL' || coinType.toLowerCase().includes('wal')) {
+    return { symbol: 'WAL', name: suffix, decimals: 9 };
+  }
+
   return {
     symbol: normalizedSymbol,
     name: suffix,
-    decimals: null,
+    decimals: 9,
   };
 }
 
@@ -131,7 +135,7 @@ export class SuiIngestionService {
     };
 
     await this.persistSnapshot(walletAddress, network, snapshot);
-    this.logger.log(
+    this.logger.verbose(
       `Synced wallet ${walletAddress} on ${network}: ${snapshot.transactions.length} tx, ${snapshot.coins.length} balances, ${snapshot.objects.length} objects.`,
     );
 

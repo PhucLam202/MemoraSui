@@ -5,6 +5,7 @@ import { DatabaseService } from '../database/database.service';
 import { WalletAgent } from '../ai/agents/wallet-agent';
 import { buildSessionTitle } from '../ai/parsers/structured-output.parser';
 import { WalletService } from '../wallet/wallet.service';
+import { type AiStreamEmitter } from '../ai/orchestrator/ai-harness.types';
 
 type ChatSessionRecord = {
   id: string;
@@ -64,12 +65,37 @@ export class ChatService {
   }
 
   async sendMessage(input: { sessionId?: string; walletId: string; content: string }) {
+    return this.processMessage(input);
+  }
+
+  async sendMessageStream(input: { sessionId?: string; walletId: string; content: string }, emit: AiStreamEmitter) {
+    return this.processMessage(input, emit);
+  }
+
+  private async processMessage(input: { sessionId?: string; walletId: string; content: string }, emit?: AiStreamEmitter) {
+    emit?.({
+      type: 'step_start',
+      id: 'chat.session',
+      label: 'Prepare chat',
+      detail: input.sessionId ? 'Loading the existing chat session.' : 'Creating a new chat session.',
+      timestamp: Date.now(),
+    });
+
     const session = input.sessionId
       ? await this.getSession(input.sessionId)
       : await this.createSession({
           walletId: input.walletId,
           title: buildSessionTitle(input.content),
         });
+
+    emit?.({
+      type: 'step_end',
+      id: 'chat.session',
+      label: 'Prepare chat',
+      detail: `Session ready: ${session.id}.`,
+      status: 'completed',
+      timestamp: Date.now(),
+    });
 
     const userMessage = await this.persistMessage({
       id: randomUUID(),
@@ -82,9 +108,37 @@ export class ChatService {
       timestamp: new Date(),
     });
 
-    const answer = await this.walletAgent.answer({
-      walletId: session.walletId,
-      question: input.content,
+    emit?.({
+      type: 'step_start',
+      id: 'chat.ai',
+      label: 'Run LangGraph',
+      detail: 'Generating the assistant response.',
+      timestamp: Date.now(),
+    });
+
+    const answer = await this.walletAgent.answer(
+      {
+        walletId: session.walletId,
+        question: input.content,
+      },
+      { emit },
+    );
+
+    emit?.({
+      type: 'step_end',
+      id: 'chat.ai',
+      label: 'Run LangGraph',
+      detail: 'Assistant response generated.',
+      status: 'completed',
+      timestamp: Date.now(),
+    });
+
+    emit?.({
+      type: 'step_start',
+      id: 'chat.persist',
+      label: 'Save answer',
+      detail: 'Persisting the assistant message.',
+      timestamp: Date.now(),
     });
 
     const assistantMessage = await this.persistMessage({
@@ -102,6 +156,15 @@ export class ChatService {
     });
 
     await this.touchSession(session.id, assistantMessage.timestamp);
+
+    emit?.({
+      type: 'step_end',
+      id: 'chat.persist',
+      label: 'Save answer',
+      detail: 'Assistant message stored.',
+      status: 'completed',
+      timestamp: Date.now(),
+    });
 
     return {
       session: await this.getSession(session.id),
@@ -238,6 +301,10 @@ export class ChatService {
   }
 }
 
+function normalizeRole(value: unknown): ChatMessageRecord['role'] {
+  return value === 'assistant' || value === 'system' || value === 'tool' ? value : 'user';
+}
+
 function toDate(value: unknown) {
   if (value instanceof Date) {
     return value;
@@ -249,8 +316,4 @@ function toDate(value: unknown) {
   }
 
   return null;
-}
-
-function normalizeRole(value: unknown): ChatMessageRecord['role'] {
-  return value === 'assistant' || value === 'system' || value === 'tool' ? value : 'user';
 }

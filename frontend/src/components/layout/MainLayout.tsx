@@ -33,8 +33,9 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children, activePath }) 
     const isCollapsed = localStorage.getItem('sui-portfolio:sidebar-collapsed') === 'true';
     setSidebarWidth(isCollapsed ? '88px' : '280px');
 
-    const handleToggle = (e: any) => {
-      setSidebarWidth(e.detail.collapsed ? '88px' : '280px');
+    const handleToggle = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      setSidebarWidth(detail.collapsed ? '88px' : '280px');
     };
 
     window.addEventListener('sidebar-toggle', handleToggle);

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { SYSTEM_PROMPT } from '../prompts/system.prompt';
 import { MetricsService } from '../../observability/metrics.service';
 import { ChatOrchestratorService } from '../orchestrator/chat-orchestrator.service';
+import { type AiStreamEmitter } from '../orchestrator/ai-harness.types';
 import { backendEnv } from '../../config/env';
 
 @Injectable()
@@ -14,7 +15,7 @@ export class WalletAgent {
     private readonly metricsService: MetricsService,
   ) {}
 
-  async answer(input: { walletId: string; question: string }) {
+  async answer(input: { walletId: string; question: string }, options?: { emit?: AiStreamEmitter }) {
     const startedAt = Date.now();
     if (!this.acquireAiRateLimitSlot()) {
       this.metricsService.recordAiCall(false, 0);
@@ -30,7 +31,7 @@ export class WalletAgent {
       };
     }
 
-    const output = await this.chatOrchestrator.answer(input);
+    const output = await this.chatOrchestrator.answer(input, options);
     this.logger.log(`AI harness intent=${output.intent} source=${output.routeSource} tools=${output.toolCalls.map((item) => String(item.tool ?? 'unknown')).join(',')}`);
     this.metricsService.recordAiCall(true, Date.now() - startedAt);
     return output;

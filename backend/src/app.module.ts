@@ -6,6 +6,9 @@ import { AnswerPortfolioChain } from './ai/chains/answer-portfolio.chain';
 import { AnswerWalletSummaryChain } from './ai/chains/answer-wallet-summary.chain';
 import { ClassifyQuestionChain } from './ai/chains/classify-question.chain';
 import { ComposeAnswerChain } from './ai/chains/compose-answer.chain';
+import { LangGraphOrchestratorService } from './ai/graph/langgraph-orchestrator.service';
+import { LangGraphSupervisor } from './ai/graph/supervisor';
+import { LangGraphWorkflow } from './ai/graph/workflow';
 import { RouteToolsChain } from './ai/chains/route-tools.chain';
 import { WalletAgent } from './ai/agents/wallet-agent';
 import { OpenAiClient } from './ai/llm/openai.client';
@@ -20,6 +23,7 @@ import { GetPortfolioTool } from './ai/tools/get-portfolio.tool';
 import { GetProtocolUsageTool } from './ai/tools/get-protocol-usage.tool';
 import { GetRiskFlagsTool } from './ai/tools/get-risk-flags.tool';
 import { GetWalletSummaryTool } from './ai/tools/get-wallet-summary.tool';
+import { LangGraphToolRegistry } from './ai/tools/langgraph-tool-registry';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { AnalyticsController } from './analytics/analytics.controller';
@@ -74,6 +78,9 @@ import { MetricsService } from './observability/metrics.service';
     ToolCallLoop,
     ComposeAnswerChain,
     ChatOrchestratorService,
+    LangGraphOrchestratorService,
+    LangGraphSupervisor,
+    LangGraphWorkflow,
     AnswerWalletSummaryChain,
     AnswerPortfolioChain,
     AnswerFeeChain,
@@ -86,6 +93,7 @@ import { MetricsService } from './observability/metrics.service';
     GetProtocolUsageTool,
     GetObjectSummaryTool,
     GetRiskFlagsTool,
+    LangGraphToolRegistry,
     WalletAgent,
   ],
 })

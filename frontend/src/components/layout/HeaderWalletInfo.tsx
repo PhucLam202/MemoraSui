@@ -22,20 +22,6 @@ type HeaderBalanceState =
   | { status: 'loaded'; value: string }
   | { status: 'error'; message: string };
 
-function toStatusLabel(status: string | null | undefined, isVerified: boolean): string {
-  if (!status || status === 'disconnected') {
-    return 'Wallet not connected';
-  }
-
-  if (status === 'connected') {
-    return isVerified ? 'Verified Session' : 'Wallet connected';
-  }
-  if (status === 'connecting') {
-    return 'Connecting wallet';
-  }
-
-  return `Wallet ${status}`;
-}
 
 export function HeaderWalletInfo() {
   const currentClient = useCurrentClient();
@@ -52,8 +38,6 @@ export function HeaderWalletInfo() {
   const [suiPrice, setSuiPrice] = useState<number | null>(null);
 
   const resolvedAddress = currentAccount?.address ?? session?.address;
-  const isVerified = session?.status === 'verified';
-  const statusLabel = toStatusLabel(walletConnection.status, isVerified);
 
   useEffect(() => {
     if (!currentClient || !currentAccount?.address) {

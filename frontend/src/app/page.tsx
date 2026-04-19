@@ -109,6 +109,7 @@ export default function LandingPage() {
               overflow: 'hidden',
               zIndex: 10
             }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img 
                   src="/hero-image.png" 
                   alt="Assistant 3D Character" 

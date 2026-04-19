@@ -105,6 +105,18 @@ export interface WalletProtocolSummary {
   actionBreakdown: Record<string, number>;
 }
 
+export interface WalletStakingSummary {
+  totalStaked: string;
+  totalRewards: string;
+  positions: Array<{
+    validator: string;
+    amount: string;
+    stakedAtMs: number | null;
+    rewards: string;
+    apy?: number;
+  }>;
+}
+
 export interface WalletAnalyticsSnapshot {
   walletAddress: string;
   network: WalletNetwork;
@@ -119,4 +131,5 @@ export interface WalletAnalyticsSnapshot {
   activity: WalletActivitySummary;
   fees: WalletFeeSummary;
   protocols: WalletProtocolSummary;
+  staking: WalletStakingSummary;
 }

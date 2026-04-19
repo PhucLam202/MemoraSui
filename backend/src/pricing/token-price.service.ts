@@ -58,7 +58,7 @@ export class TokenPriceService {
           const ticker = await exchange.fetchTicker(marketSymbol);
           const last = typeof ticker.last === 'number' ? ticker.last : null;
           if (last !== null && Number.isFinite(last) && last > 0) {
-            this.logger.log(`Price fetched successfully from ${exchange.id} for ${symbol}: $${last}`);
+            this.logger.verbose(`Price fetched successfully from ${exchange.id} for ${symbol}: $${last}`);
             return last;
           }
         }

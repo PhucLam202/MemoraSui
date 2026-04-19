@@ -7,7 +7,7 @@ import { StatCard } from '@/components/modules/dashboard/StatCard';
 import { AssetList } from '@/components/modules/dashboard/AssetList';
 import { WalletConnectGate } from '@/components/modules/dashboard/WalletConnectGate';
 import { ClayCard } from '@/components/shared/ClayCard';
-import { fetchApi, formatSui, formatTokenAmount, formatUsd } from '@/lib/api-client';
+import { fetchApi, formatTokenAmount, formatUsd } from '@/lib/api-client';
 import { loadWalletSessionFromStorage } from '@/lib/wallet-session';
 import { 
   History, 
@@ -18,7 +18,6 @@ import {
   Wallet, 
   ShieldCheck, 
   ChevronRight,
-  TrendingUp,
   Clock
 } from 'lucide-react';
 
@@ -51,13 +50,31 @@ export default function DashboardPage() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
   const [activity, setActivity] = useState<ActivitySummary | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [walletSession, setWalletSession] = useState(() => loadWalletSessionFromStorage());
 
-  const walletAddress = loadWalletSessionFromStorage()?.address ?? null;
+  const walletAddress = walletSession?.address ?? null;
   const networkName = 'testnet';
+
+  useEffect(() => {
+    const syncSession = () => {
+      setWalletSession(loadWalletSessionFromStorage());
+    };
+
+    syncSession();
+    window.addEventListener('storage', syncSession);
+    window.addEventListener('wallet-session-updated', syncSession as EventListener);
+    return () => {
+      window.removeEventListener('storage', syncSession);
+      window.removeEventListener('wallet-session-updated', syncSession as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     async function load() {
       if (!walletAddress) {
+        setPortfolio(null);
+        setActivity(null);
+        setSnapshot(null);
         setLoading(false);
         return;
       }

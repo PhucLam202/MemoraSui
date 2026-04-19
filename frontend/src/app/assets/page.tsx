@@ -3,9 +3,9 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ClayCard } from '@/components/shared/ClayCard';
-import { fetchApi, formatSui, formatTokenAmount, formatUsd } from '@/lib/api-client';
+import { fetchApi, formatTokenAmount, formatUsd } from '@/lib/api-client';
 import { loadWalletSessionFromStorage } from '@/lib/wallet-session';
-import { Search, Info, Box, Coins, ArrowUpRight, TrendingUp } from 'lucide-react';
+import { Search, Info, Box, Coins, ArrowUpRight } from 'lucide-react';
 
 type PaginationResult<T> = { items: T[] };
 
@@ -221,6 +221,7 @@ export default function AssetsPage() {
                     <ClayCard padding="none" className="object-card">
                       <div className="object-media">
                         {item.display?.image_url ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
                           <img src={item.display.image_url} alt={item.display.name} />
                         ) : (
                           <div className="object-placeholder">

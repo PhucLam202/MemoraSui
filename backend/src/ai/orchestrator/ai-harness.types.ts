@@ -37,6 +37,42 @@ export type AiHarnessOutput = {
   plannedToolCalls: AiPlannedToolCall[];
 };
 
+export type AiStreamEvent =
+  | {
+      type: 'step_start';
+      id: string;
+      label: string;
+      detail?: string;
+      timestamp: number;
+    }
+  | {
+      type: 'step_update';
+      id: string;
+      label?: string;
+      detail: string;
+      timestamp: number;
+    }
+  | {
+      type: 'step_end';
+      id: string;
+      label?: string;
+      detail?: string;
+      status: 'completed' | 'error';
+      timestamp: number;
+    }
+  | {
+      type: 'final';
+      response: Record<string, unknown>;
+      timestamp: number;
+    }
+  | {
+      type: 'error';
+      message: string;
+      timestamp: number;
+    };
+
+export type AiStreamEmitter = (event: AiStreamEvent) => void;
+
 export type AiToolContext = {
   walletAddress: string;
   network?: SuiNetwork;

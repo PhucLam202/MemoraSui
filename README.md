@@ -1,335 +1,66 @@
-# AI-Powered Web3 Portfolio Assistant - Sui Project Context
+# 🤖 AI-Powered Web3 Portfolio Assistant (Sui)
 
-This README is a compact context file for humans and LLMs.
-It summarizes the product, architecture, implementation direction, and the rules that prevent the AI from hallucinating or leaking sensitive data.
+Chương trình trợ lý AI thông minh tích hợp sâu với hệ sinh thái **Sui**, giúp người dùng phá bỏ rào cản giữa dữ liệu blockchain phức tạp và các quyết định tài chính sáng suốt.
 
-## 1. Project Summary
+## 🌟 Trải Nghiệm Cốt Lõi: "Trò Chuyện Với Ví Của Bạn"
 
-The product is a conversational AI assistant for blockchain wallets.
-Users connect a Sui wallet, sync on-chain data, and ask questions like:
+Thay vì phải tự tra cứu và phân tích hàng ngàn giao dịch thô, ứng dụng cung cấp một giao diện hội thoại tự nhiên, nơi AI đóng vai trò như một chuyên gia tư vấn danh mục đầu tư cá nhân 24/7.
 
-- What did I do this week?
-- How much gas did I spend?
-- What tokens or objects do I hold?
-- Which protocols do I use most?
+### Các tình huống ví dụ:
+- *"Hãy phân tích tỷ trọng tài sản trong ví của tôi."*
+- *"Tại sao phí gas của tôi tuần này lại cao bất thường?"*
+- *"Dự án Scallop hiện tại có tin tức gì mới không?"*
+- *"Tổng giá trị tài sản của tôi đã thay đổi thế nào từ đầu tháng?"*
 
-The system turns raw on-chain data into structured analytics and natural-language answers.
+---
 
-## 2. Product Goal
-
-Core goal:
-
-- Convert complex wallet activity into readable insights
-- Let users chat with their wallet
-- Keep analytics explainable and grounded in backend data
-- Reduce manual inspection of blockchain explorers
+## 🛠️ Kiến Trúc AI Đa Tác Nhân (Agentic Architecture)
 
-## 3. Product Philosophy
+Hệ thống không đơn thuần là một chatbot, mà là một mạng lưới các **Sub-agents** chuyên biệt được điều phối bởi một **Supervisor AI** mạnh mẽ.
 
-The architecture is hybrid:
-
-- Backend is the source of truth for data and analytics
-- LLM acts as orchestrator and explainer
-- LangChain-style harness routes questions to structured tools
-
-Important rule:
-
-- The LLM must not parse blockchain data directly
-- The LLM must call backend tools
-- The backend decides what data is valid, safe, and complete
-
-## 4. Current Implementation Direction
-
-The original PRD/SRS describe an EVM-first version.
-The current project direction is Sui-first.
-
-So for implementation:
-
-- Use Sui wallet connection flow
-- Use Sui RPC / fullnode / indexer as data sources
-- Work with transaction blocks, objects, coins, and events
-- Use MongoDB with connection string based management
-- Use Redis cache for repeated RPC calls
-- Use OpenAI through a modular AI harness
-
-If a detail in PRD/SRS conflicts with the current Todo, follow the Todo for implementation.
+### 1. Supervisor Agent (Điều Phối Viên)
+Đóng vai trò "bộ não" trung tâm, phân tích ý định của người dùng và lập kế hoạch thực thi bằng cách điều phối các sub-agents phù hợp.
 
-## 5. Target Users
+### 2. Portfolio Agent (Chuyên Gia Danh Mục)
+- ** holdings & Allocation:** Phân tích chi tiết các loại token, NFT và các vị thế DeFi.
+- **PnL Tracking:** Giải thích biến động lãi/lỗ dựa trên dữ liệu giá thực tế và lịch sử giao dịch.
+- **Risk Analysis:** Cảnh báo các rủi ro về nồng độ tài sản hoặc các vị thế không an toàn.
 
-- DeFi traders
-- Long-term crypto investors
-- NFT users
-- Web3 beginners
-
-## 6. MVP Scope
-
-Must have:
-
-- Wallet connection
-- Wallet authentication
-- On-chain data ingestion
-- Transaction normalization
-- Analytics modules
-- AI harness with tool-based routing
-- Dashboard UI
-
-Nice to have later:
-
-- Risk detection
-- Tax analysis
-- Multi-wallet support
-- Multi-chain support
-
-## 7. System Architecture
+### 3. Gas & Fee Agent (Chuyên Gia Tối Ưu Phí)
+- **Spending Trends:** Phân tích thói quen chi tiêu phí gas.
+- **Outlier Detection:** Phát hiện các giao dịch bị lỗi hoặc tốn phí cao bất thường.
+- **Optimization:** Đưa ra lời khuyên về thời điểm thực hiện giao dịch để tiết kiệm chi phí.
 
-```text
-Frontend (Next.js)
-   ↓
-Backend API (NestJS)
-   ├── Wallet Module
-   ├── Sui Data Module
-   ├── Sync Worker / Queue
-   ├── Normalization Module
-   ├── Analytics Module
-   └── AI Harness Module
-           ├── Router / Intent Detection
-           ├── Chains
-           ├── Tools
-           ├── Prompts
-           ├── Agents
-           └── Parsers
-   ↓
-MongoDB
-   ↓
-Redis Cache
-   ↓
-OpenAI API
-```
+### 4. Research Agent (Chuyên Gia Nghiên Cứu)
+- **Protocol Insights:** Thu thập dữ liệu real-time về TVL, khối lượng giao dịch và rủi ro của các giao thức.
+- **Market Sentiment:** Phân tích tâm lý thị trường từ các nguồn tin tức và mạng xã hội.
+- **Tokenomics:** Deep-dive vào cơ chế token của các dự án mới trên Sui.
 
-## 8. Data Flow
+---
 
-1. User connects a Sui wallet
-2. Backend stores wallet metadata
-3. Sync job is created
-4. Worker fetches on-chain data from Sui RPC / indexer
-5. Raw data is normalized into domain events and summaries
-6. Analytics snapshots are stored
-7. User sends a question
-8. LLM router detects intent
-9. LLM calls the right tool
-10. LLM composes the final answer from structured context
-
-## 9. Backend Responsibilities
-
-The backend owns:
-
-- Wallet records
-- Auth challenge and signature verification
-- Sync jobs and retries
-- Sui data ingestion
-- Normalized events
-- Analytics computation
-- Chat session and message history
-- Tool responses for the AI harness
-
-The backend must be the only trusted source for:
-
-- balances
-- transaction history
-- object ownership
-- protocol usage
-- gas summaries
-- risk flags
-
-## 10. MongoDB Model Direction
+## 🧠 Khả Năng Ghi Nhớ Dài Hạn (MemWal)
 
-MongoDB is used as the main database.
+Khác với các AI thông thường, trợ lý của chúng tôi tích hợp **MemWal** - hệ thống bộ nhớ dài hạn giúp AI:
+- Nhớ được các thói quen và sở thích của người dùng qua các phiên chat.
+- Theo dõi tiến trình của các câu hỏi phức tạp kéo dài nhiều ngày.
+- Cá nhân hóa các câu trả lời dựa trên ngữ cảnh lịch sử của riêng bạn.
 
-Use:
+---
 
-- connection string via `MONGODB_URI`
-- collections/models instead of SQL tables
-- schema validation and indexed fields
-- versioned documents where needed
-
-Collections are expected for:
+## 🏗️ Nền Tảng Kỹ Thuật Phục Vụ AI
 
-- Wallet
-- SyncJob
-- RawTransactionBlock
-- NormalizedEvent
-- CoinBalance
-- ObjectPosition
-- WalletSnapshot
-- ChatSession
-- ChatMessage
+Để AI có thể trả lời chính xác và không "ảo giác", hệ thống phía sau cung cấp một nguồn dữ liệu sạch và tin cậy:
+- **Normalized Event Engine:** Chuyển đổi dữ liệu blockchain thô từ Sui thành các sự kiện ngôn ngữ tự nhiên dễ hiểu.
+- **Real-time Sync:** Dữ liệu ví luôn được đồng bộ mới nhất từ Sui RPC & Indexer.
+- **Grounded Verification:** Mọi câu trả lời của AI đều được đối soát (grounded) với dữ liệu thực tế từ Backend trước khi gửi tới người dùng.
 
-## 11. Sui Data Concepts
+---
 
-Important Sui concepts used by the product:
+## 🚀 Bắt Đầu
 
-- Transaction Block
-- Coin
-- Object
-- Event
-- Gas fee
-- Object ownership
-- Move call output
+1. **Kết nối ví Sui:** Ứng dụng tự động lập chỉ mục (index) dữ liệu toàn bộ lịch sử của bạn.
+2. **Đồng bộ dữ liệu:** Quá trình chuẩn hóa dữ liệu diễn ra tự động trong vài giây.
+3. **Bắt đầu trò chuyện:** AI đã sẵn sàng để giải đáp mọi thắc mắc về tài sản của bạn.
 
-The system should avoid EVM-specific assumptions unless they truly map to Sui behavior.
-
-## 12. RPC and Cache Policy
-
-Sui RPC calls must be cached whenever possible.
-
-Rules:
-
-- Cache repeated reads in Redis or an equivalent cache layer
-- Use cache keys that include wallet, chain, cursor, and time window
-- Apply different TTLs by data type
-- Deduplicate concurrent requests
-- Support stale-while-revalidate for low-churn data
-- Do not call RPC repeatedly for the same data if cache is valid
-
-Cacheable examples:
-
-- wallet balances
-- transaction summaries
-- object snapshots
-- event summaries
-
-Do not cache unsafe or raw sensitive payloads unless they are sanitized first.
-
-## 13. AI Harness Structure
-
-The AI layer should be modular and explicit.
-
-Suggested structure:
-
-```text
-backend/src/ai/
-  chains/
-    classify-question.chain.ts
-    answer-wallet-summary.chain.ts
-    answer-gas.chain.ts
-
-  tools/
-    get-wallet-summary.tool.ts
-    get-gas-usage.tool.ts
-    get-portfolio.tool.ts
-    get-activity.tool.ts
-    get-risk-flags.tool.ts
-
-  prompts/
-    system.prompt.ts
-    gas.prompt.ts
-    portfolio.prompt.ts
-
-  agents/
-    wallet-agent.ts
-
-  parsers/
-    structured-output.parser.ts
-```
-
-Responsibilities:
-
-- Chains decide which task to run
-- Tools fetch structured backend data
-- Prompts define answer rules and safety rules
-- Agents coordinate multi-step reasoning
-- Parsers enforce structured output
-
-## 14. AI Answering Rules
-
-The AI must:
-
-- Answer only from tool output and approved backend context
-- Prefer short, exact, and explainable responses
-- Ask for clarification when the question is ambiguous
-- Refuse to invent values, counts, or ownership
-- Avoid guessing protocol names or token identities
-- Avoid assuming unsupported wallet activity
-
-If the backend does not provide enough data:
-
-- say the data is missing
-- explain what is missing
-- suggest the next sync or query step
-
-## 15. Security and Privacy Guardrails
-
-This project handles sensitive wallet data.
-
-Hard rules:
-
-- Never store private keys
-- Never ask for private keys
-- Never log secrets, signatures, tokens, or raw sensitive payloads in full
-- Mask wallet addresses when full exposure is unnecessary
-- Separate public and private data access
-- Use short-lived challenge nonces for auth
-- Prevent replay on signature-based login
-- Minimize data sent to the LLM
-- Do not expose unnecessary raw on-chain payloads to prompts
-
-If a value is not required for the answer, do not pass it into the model.
-
-## 16. Reliability Rules
-
-The system should be:
-
-- idempotent on sync and normalization
-- retry-safe on worker jobs
-- resilient to RPC timeouts and rate limits
-- observable through logs and metrics
-
-Prefer:
-
-- safe retries
-- deduplication
-- clear job status
-- deterministic output format
-
-## 17. Non-Functional Targets
-
-From the SRS intent:
-
-- Recent sync should be fast
-- AI response should be low latency
-- API should remain stateless where possible
-- Queue workers should scale independently
-- Data processing should be repeatable
-
-## 18. Key Product Metrics
-
-Track:
-
-- wallet connections
-- chat usage per user
-- AI answer accuracy
-- 7-day retention
-- sync success rate
-- RPC cache hit rate
-
-## 19. Out of Scope for MVP
-
-Do not overbuild the first version with:
-
-- multi-chain expansion
-- tax engine
-- complex risk scoring
-- private key management
-- direct blockchain parsing inside the LLM
-
-## 20. LLM Working Contract
-
-When using this repository as context, the LLM should:
-
-- treat backend data as source of truth
-- never infer missing on-chain facts
-- prefer tools over assumptions
-- follow security rules before answering
-- ask for clarification if the intent is unclear
-- keep the answer grounded, concise, and auditable
-
+---
+© 2026 Sui Project A - Nâng tầm trải nghiệm Web3 bằng Trí tuệ nhân tạo.

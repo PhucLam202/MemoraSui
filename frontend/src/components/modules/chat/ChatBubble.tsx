@@ -65,6 +65,8 @@ function renderText(text: string) {
 }
 
 export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isAi, timestamp }) => {
+  const isExpandedContent = isAi && (message.length > 220 || message.split('\n').length > 6 || message.includes('Sources for Further Reading'));
+
   return (
     <div style={{ 
       display: 'flex', 
@@ -75,17 +77,19 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isAi, timestamp
       animation: 'bubbleIn 0.3s ease-out'
     }}>
       <div style={{ 
-        maxWidth: '85%',
-        padding: '16px 24px',
+        width: isExpandedContent ? '100%' : 'auto',
+        maxWidth: isExpandedContent ? '100%' : '85%',
+        padding: isExpandedContent ? '20px 24px' : '16px 24px',
         borderRadius: '24px',
         borderBottomRightRadius: isAi ? '24px' : '6px',
         borderBottomLeftRadius: isAi ? '6px' : '24px',
-        backgroundColor: isAi ? 'var(--white)' : 'var(--matcha-primary)',
+        backgroundColor: isAi ? 'rgba(255,255,255,0.96)' : 'var(--matcha-primary)',
         color: isAi ? 'var(--text-primary)' : 'white',
         boxShadow: isAi ? '0 10px 25px rgba(0,0,0,0.05)' : 'var(--shadow-outer)',
         fontSize: '0.975rem',
         lineHeight: 1.6,
         wordBreak: 'break-word',
+        whiteSpace: 'pre-wrap',
         position: 'relative',
         border: isAi ? '1px solid rgba(255,255,255,0.8)' : 'none'
       }} className="chat-bubble-content">

@@ -40,6 +40,49 @@ export function useWalletAuth({ appName, apiBaseUrl }: UseWalletAuthOptions) {
   const autoAuthAttemptRef = useRef<string | null>(null);
   const autoSyncAttemptRef = useRef<string | null>(null);
 
+  const handleDisconnect = useCallback(async () => {
+    setError(null);
+    autoAuthAttemptRef.current = null;
+    autoSyncAttemptRef.current = null;
+    try {
+      await dAppKit.disconnectWallet();
+      setSession(null);
+      clearWalletSessionFromStorage();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to disconnect');
+    }
+  }, [dAppKit]);
+
+  const handleSyncWallet = useCallback(async (targetSession: WalletSession) => {
+    const syncTarget = targetSession.walletId || targetSession.address;
+    if (!syncTarget) return;
+
+    setSyncStatus('Syncing...');
+    try {
+      const isAddress = syncTarget.startsWith('0x');
+      const response = await fetch(
+        isAddress
+          ? `${apiBaseUrl}/sync/wallet-addresses/${syncTarget}`
+          : `${apiBaseUrl}/sync/wallets/${syncTarget}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(targetSession.userId ? { 'x-user-id': targetSession.userId } : {}),
+          },
+        }
+      );
+
+      if (response.ok) {
+        setSyncStatus('Sync successful');
+      } else {
+        setSyncStatus('Sync failed');
+      }
+    } catch {
+      setSyncStatus('Sync error');
+    }
+  }, [apiBaseUrl]);
+
   // Sync session with state
   useEffect(() => {
     setIsHydrated(true);
@@ -79,20 +122,7 @@ export function useWalletAuth({ appName, apiBaseUrl }: UseWalletAuthOptions) {
     }, timeoutMs);
 
     return () => window.clearTimeout(timeoutId);
-  }, [isHydrated, session?.accessTokenExpiresAt]);
-
-  const handleDisconnect = useCallback(async () => {
-    setError(null);
-    autoAuthAttemptRef.current = null;
-    autoSyncAttemptRef.current = null;
-    try {
-      await dAppKit.disconnectWallet();
-      setSession(null);
-      clearWalletSessionFromStorage();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to disconnect');
-    }
-  }, [dAppKit]);
+  }, [handleDisconnect, isHydrated, session?.accessTokenExpiresAt]);
 
   const handleAuthenticate = useCallback(async () => {
     if (!account || !currentWallet) {
@@ -108,7 +138,21 @@ export function useWalletAuth({ appName, apiBaseUrl }: UseWalletAuthOptions) {
       const network = TESTNET_NETWORK;
       let challengeStr = `Local auth for ${account.address}`;
       let backendStatus: 'pending' | 'offline' = 'offline';
-      let verifyData: any = { status: 'verified' };
+      
+      interface VerifyData {
+        accessToken?: string;
+        accessTokenExpiresAt?: string;
+        refreshToken?: string;
+        refreshTokenExpiresAt?: string;
+        sessionId?: string;
+        status: string;
+        userId?: string;
+        user?: { id: string };
+        walletId?: string;
+        verifiedAt?: string;
+      }
+      
+      let verifyData: VerifyData = { status: 'verified' };
 
       try {
         const challengeResponse = await fetch(`${apiBaseUrl}/auth/challenge`, {
@@ -184,43 +228,13 @@ export function useWalletAuth({ appName, apiBaseUrl }: UseWalletAuthOptions) {
       if (verifyData.status === 'verified') {
         void handleSyncWallet(newSession);
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Authentication failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication failed');
       setSession(curr => curr ? { ...curr, status: 'error' as WalletAuthStatus } : null);
     } finally {
       setIsBusy(false);
     }
-  }, [account, currentWallet, apiBaseUrl, appName, dAppKit]);
-
-  const handleSyncWallet = useCallback(async (targetSession: WalletSession) => {
-    const syncTarget = targetSession.walletId || targetSession.address;
-    if (!syncTarget) return;
-
-    setSyncStatus('Syncing...');
-    try {
-      const isAddress = syncTarget.startsWith('0x');
-      const response = await fetch(
-        isAddress
-          ? `${apiBaseUrl}/sync/wallet-addresses/${syncTarget}`
-          : `${apiBaseUrl}/sync/wallets/${syncTarget}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(targetSession.userId ? { 'x-user-id': targetSession.userId } : {}),
-          },
-        }
-      );
-
-      if (response.ok) {
-        setSyncStatus('Sync successful');
-      } else {
-        setSyncStatus('Sync failed');
-      }
-    } catch (e) {
-      setSyncStatus('Sync error');
-    }
-  }, [apiBaseUrl]);
+  }, [account, currentWallet, apiBaseUrl, appName, dAppKit, handleSyncWallet]);
 
   useEffect(() => {
     if (!isHydrated || session?.status !== 'verified') {

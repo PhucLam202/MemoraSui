@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { MessageSquarePlus } from 'lucide-react';
+import { MessageSquarePlus, Activity, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ClayCard } from '@/components/shared/ClayCard';
 import { ClayInput } from '@/components/shared/ClayInput';
 import { ClayButton } from '@/components/shared/ClayButton';
 import { ChatBubble } from '@/components/modules/chat/ChatBubble';
-import { fetchApi, postApi } from '@/lib/api-client';
+import { fetchApi, postApiStream } from '@/lib/api-client';
 import { loadWalletSessionFromStorage, type WalletSession } from '@/lib/wallet-session';
 
 type UiMessage = {
@@ -60,6 +60,47 @@ type SendMessageResponse = {
   session: { id: string };
 };
 
+type ChatFlowStep = {
+  id: string;
+  title: string;
+  detail?: string;
+  status: 'running' | 'completed' | 'error';
+};
+
+type ChatStreamEvent =
+  | {
+      type: 'step_start';
+      id: string;
+      label: string;
+      detail?: string;
+      timestamp: number;
+    }
+  | {
+      type: 'step_update';
+      id: string;
+      label?: string;
+      detail: string;
+      timestamp: number;
+    }
+  | {
+      type: 'step_end';
+      id: string;
+      label?: string;
+      detail?: string;
+      status: 'completed' | 'error';
+      timestamp: number;
+    }
+  | {
+      type: 'final';
+      response: SendMessageResponse & Record<string, unknown>;
+      timestamp: number;
+    }
+  | {
+      type: 'error';
+      message: string;
+      timestamp: number;
+    };
+
 const INTRO_MESSAGE = 'Hello! Ask about portfolio, activity, gas fee, protocols, or objects.';
 const CHAT_STORAGE_PREFIX = 'sui-portfolio:chat-active-session:';
 
@@ -82,6 +123,48 @@ function formatSessionTime(value: string) {
 
 function buildStorageKey(walletId: string) {
   return `${CHAT_STORAGE_PREFIX}${walletId}`;
+}
+
+async function readSseStream(response: Response, onEvent: (event: ChatStreamEvent) => void) {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Streaming response body is not available.');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+
+    let separatorIndex = buffer.indexOf('\n\n');
+    while (separatorIndex !== -1) {
+      const rawEvent = buffer.slice(0, separatorIndex).trim();
+      buffer = buffer.slice(separatorIndex + 2);
+      separatorIndex = buffer.indexOf('\n\n');
+
+      if (!rawEvent) {
+        continue;
+      }
+
+      const data = rawEvent
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n');
+
+      if (!data) {
+        continue;
+      }
+
+      onEvent(JSON.parse(data) as ChatStreamEvent);
+    }
+  }
 }
 
 function getStoredSessionId(walletId: string) {
@@ -119,9 +202,6 @@ function mapToolSources(
   });
 }
 
-function getSuiScanUrl(digest: string) {
-  return `https://suivision.xyz/txblock/${encodeURIComponent(digest)}`;
-}
 
 function mapMessageToUi(message: ChatMessageItem): UiMessage {
   return {
@@ -145,6 +225,8 @@ export default function ChatPage() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [sessions, setSessions] = useState<ChatSessionItem[]>([]);
+  const [flowSteps, setFlowSteps] = useState<ChatFlowStep[]>([]);
+  const [isFlowExpanded, setIsFlowExpanded] = useState(false);
   const [messages, setMessages] = useState<UiMessage[]>([
     {
       id: 'intro',
@@ -191,7 +273,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages]);
+  }, [messages, flowSteps]);
 
   useEffect(() => {
     if (!walletId) {
@@ -362,21 +444,128 @@ export default function ChatPage() {
     });
     setSending(true);
     setChatError(null);
+    setFlowSteps([]);
+    setIsFlowExpanded(true); // Auto-expand when starting research
 
     try {
-      const response = await postApi<SendMessageResponse>('/chat/messages', {
+      const response = await postApiStream('/chat/messages', {
         walletId,
         sessionId,
         content,
       });
 
-      const nextSessionId = response.session.id;
+      let finalResponse: SendMessageResponse & Record<string, unknown> | null = null;
+
+      await readSseStream(response, (event) => {
+        if (event.type === 'step_start') {
+          setFlowSteps((prev) => {
+            const nextStep: ChatFlowStep = {
+              id: event.id,
+              title: event.label,
+              detail: event.detail,
+              status: 'running',
+            };
+            const index = prev.findIndex((item) => item.id === event.id);
+            if (index === -1) {
+              return [...prev, nextStep];
+            }
+            const currentStep = prev[index];
+            if (!currentStep) {
+              return [...prev, nextStep];
+            }
+            const next = [...prev];
+            next[index] = { ...currentStep, ...nextStep };
+            return next;
+          });
+        }
+
+        if (event.type === 'step_update') {
+          setFlowSteps((prev) => {
+            const index = prev.findIndex((item) => item.id === event.id);
+            if (index === -1) {
+              return [
+                ...prev,
+                {
+                  id: event.id,
+                  title: event.label ?? 'Step',
+                  detail: event.detail,
+                  status: 'running',
+                },
+              ];
+            }
+            const currentStep = prev[index];
+            if (!currentStep) {
+              return prev;
+            }
+            const next = [...prev];
+            next[index] = {
+              ...currentStep,
+              title: event.label ?? currentStep.title,
+              detail: event.detail,
+            };
+            return next;
+          });
+        }
+
+        if (event.type === 'step_end') {
+          setFlowSteps((prev) => {
+            const index = prev.findIndex((item) => item.id === event.id);
+            if (index === -1) {
+              return [
+                ...prev,
+                {
+                  id: event.id,
+                  title: event.label ?? 'Step',
+                  detail: event.detail,
+                  status: event.status === 'error' ? 'error' : 'completed',
+                },
+              ];
+            }
+            const currentStep = prev[index];
+            if (!currentStep) {
+              return prev;
+            }
+            const next = [...prev];
+            next[index] = {
+              ...currentStep,
+              title: event.label ?? currentStep.title,
+              detail: event.detail ?? currentStep.detail,
+              status: event.status === 'error' ? 'error' : 'completed',
+            };
+            return next;
+          });
+        }
+
+        if (event.type === 'error') {
+          setFlowSteps((prev) => [
+            ...prev,
+            {
+              id: `error-${Date.now()}`,
+              title: 'Stream error',
+              detail: event.message,
+              status: 'error',
+            },
+          ]);
+          throw new Error(event.message);
+        }
+
+        if (event.type === 'final') {
+          finalResponse = event.response;
+        }
+      });
+
+      if (!finalResponse) {
+        throw new Error('Stream ended without a final assistant response.');
+      }
+
+      const resolvedResponse = finalResponse as SendMessageResponse & Record<string, unknown>;
+      const nextSessionId = resolvedResponse.session.id;
       const assistantMessage: UiMessage = {
-        id: response.assistantMessage.id,
-        text: response.assistantMessage.content,
+        id: resolvedResponse.assistantMessage.id,
+        text: resolvedResponse.assistantMessage.content,
         isAi: true,
         time: formatDisplayTime(),
-        sources: mapToolSources(response.assistantMessage.toolCalls),
+        sources: mapToolSources(resolvedResponse.assistantMessage.toolCalls),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -403,6 +592,7 @@ export default function ChatPage() {
     setSessionId(undefined);
     setInput('');
     setChatError(null);
+    setFlowSteps([]);
     setMessages([
       {
         id: 'intro',
@@ -577,66 +767,249 @@ export default function ChatPage() {
             {loadingMessages ? (
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Loading conversation...</div>
             ) : (
-              messages.map((msg) => (
-                <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <ChatBubble message={msg.text} isAi={msg.isAi} timestamp={msg.time} />
-                  {msg.isAi && msg.sources && msg.sources.length > 0 && (
-                    <div style={{ paddingLeft: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                        Sources
-                      </span>
-                      {msg.sources.map((source, index) => {
-                        const label = `${source.label} · ${source.summary}`;
-                        const content = (
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              padding: '6px 10px',
-                              borderRadius: '999px',
-                              backgroundColor: 'rgba(255,255,255,0.75)',
-                              border: '1px solid var(--border-color)',
-                              color: 'var(--text-primary)',
-                              fontSize: '0.78rem',
-                              lineHeight: 1.2,
-                            }}
-                            title={label}
-                          >
-                            <span
-                              style={{
-                                width: '8px',
-                                height: '8px',
-                                borderRadius: '999px',
-                                backgroundColor: source.url ? 'var(--matcha-accent)' : 'var(--text-secondary)',
-                                flexShrink: 0,
-                              }}
-                            />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-                              {label}
-                            </span>
-                          </span>
-                        );
+              <>
+                {messages.map((msg, index) => {
+              const isLastMessage = index === messages.length - 1;
+              const isLastAiMessage = isLastMessage && msg.isAi;
+              const shouldShowSteps = isLastAiMessage && flowSteps.length > 0;
 
-                        return source.url ? (
-                          <a
-                            key={`${source.label}-${index}`}
-                            href={source.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ textDecoration: 'none' }}
-                          >
-                            {content}
-                          </a>
-                        ) : (
-                          <span key={`${source.label}-${index}`}>{content}</span>
-                        );
-                      })}
+              const renderFlowSteps = () => (
+                <div style={{ paddingLeft: '4px', marginBottom: '8px' }}>
+                  <div
+                    onClick={() => setIsFlowExpanded(!isFlowExpanded)}
+                    style={{
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '6px 12px',
+                      borderRadius: '12px',
+                      backgroundColor: 'rgba(255, 255, 255, 0.45)',
+                      border: '1px solid var(--border-color)',
+                      width: 'fit-content',
+                      fontSize: '0.78rem',
+                      color: 'var(--text-secondary)',
+                      fontWeight: 600,
+                      transition: 'all 0.2s ease',
+                      userSelect: 'none',
+                    }}
+                    className="langgraph-toggle"
+                  >
+                    {isFlowExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    <Activity size={14} opacity={0.7} />
+                    <span>View processing steps</span>
+                    {!isFlowExpanded && flowSteps.some(s => s.status === 'running') && (
+                      <div className="spinning-loader" style={{ marginLeft: '4px' }}>
+                        <Loader2 size={12} />
+                      </div>
+                    )}
+                  </div>
+
+                  {isFlowExpanded && (
+                    <div
+                      style={{
+                        marginTop: '10px',
+                        padding: '12px 16px',
+                        borderRadius: '16px',
+                        border: '1px solid var(--border-color)',
+                        background: 'rgba(255,255,255,0.5)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        maxWidth: '100%',
+                      }}
+                    >
+                      {flowSteps.map((step) => (
+                        <div key={step.id} className="step-item-animate" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                          <div
+                            style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '999px',
+                              marginTop: '5px',
+                              backgroundColor:
+                                step.status === 'running'
+                                  ? 'var(--matcha-accent)'
+                                  : step.status === 'completed'
+                                    ? '#6B8F71'
+                                    : '#C25B5B',
+                              flexShrink: 0,
+                            }}
+                          />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {step.title}
+                              {step.status === 'running' && (
+                                <span className="dot-flashing">
+                                  <span></span><span></span><span></span>
+                                </span>
+                              )}
+                            </div>
+                            {step.detail && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.8 }}>
+                                {step.detail}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
-              ))
+              );
+
+              return (
+                <React.Fragment key={msg.id}>
+                  {shouldShowSteps && renderFlowSteps()}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <ChatBubble message={msg.text} isAi={msg.isAi} timestamp={msg.time} />
+                    {msg.isAi && msg.sources && msg.sources.length > 0 && (
+                      <div style={{ paddingLeft: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                          Sources
+                        </span>
+                        {msg.sources.map((source, index) => {
+                          const label = `${source.label} · ${source.summary}`;
+                          const content = (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '6px 10px',
+                                borderRadius: '999px',
+                                backgroundColor: 'rgba(255,255,255,0.75)',
+                                border: '1px solid var(--border-color)',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.78rem',
+                                lineHeight: 1.2,
+                              }}
+                              title={label}
+                            >
+                              <span
+                                style={{
+                                  width: '8px',
+                                  height: '8px',
+                                  borderRadius: '999px',
+                                  backgroundColor: source.url ? 'var(--matcha-accent)' : 'var(--text-secondary)',
+                                  flexShrink: 0,
+                                }}
+                              />
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+                                {label}
+                              </span>
+                            </span>
+                          );
+
+                          return source.url ? (
+                            <a
+                              key={`${source.label}-${index}`}
+                              href={source.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ textDecoration: 'none' }}
+                            >
+                              {content}
+                            </a>
+                          ) : (
+                            <span key={`${source.label}-${index}`}>{content}</span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </React.Fragment>
+              );
+            })}
+
+            {/* During generation, if assistant message is not yet in list */}
+            {sending && flowSteps.length > 0 && (!messages.length || !messages.at(-1)?.isAi) && (
+              <div style={{ paddingLeft: '4px', marginBottom: '8px' }}>
+                <div
+                  onClick={() => setIsFlowExpanded(!isFlowExpanded)}
+                  style={{
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '6px 12px',
+                    borderRadius: '12px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+                    border: '1px solid var(--border-color)',
+                    width: 'fit-content',
+                    fontSize: '0.78rem',
+                    color: 'var(--text-secondary)',
+                    fontWeight: 600,
+                    transition: 'all 0.2s ease',
+                    userSelect: 'none',
+                  }}
+                  className="langgraph-toggle"
+                >
+                  {isFlowExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <Activity size={14} opacity={0.7} />
+                  <span>View processing steps</span>
+                  {!isFlowExpanded && flowSteps.some(s => s.status === 'running') && (
+                    <div className="spinning-loader" style={{ marginLeft: '4px' }}>
+                      <Loader2 size={12} />
+                    </div>
+                  )}
+                </div>
+
+                {isFlowExpanded && (
+                  <div
+                    style={{
+                      marginTop: '10px',
+                      padding: '12px 16px',
+                      borderRadius: '16px',
+                      border: '1px solid var(--border-color)',
+                      background: 'rgba(255,255,255,0.5)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      maxWidth: '100%',
+                    }}
+                  >
+                    {flowSteps.map((step) => (
+                      <div key={step.id} className="step-item-animate" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                        <div
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '999px',
+                            marginTop: '5px',
+                            backgroundColor:
+                              step.status === 'running'
+                                ? 'var(--matcha-accent)'
+                                : step.status === 'completed'
+                                  ? '#6B8F71'
+                                  : '#C25B5B',
+                            flexShrink: 0,
+                          }}
+                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {step.title}
+                            {step.status === 'running' && (
+                              <span className="dot-flashing">
+                                <span></span><span></span><span></span>
+                              </span>
+                            )}
+                          </div>
+                          {step.detail && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.8 }}>
+                              {step.detail}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
+              </>
+            )}
+
             <div ref={messagesEndRef} />
           </div>
 
@@ -694,6 +1067,49 @@ export default function ChatPage() {
         }
         .new-chat-btn-premium:active {
           transform: scale(0.96);
+        }
+        .langgraph-toggle:hover {
+          background-color: rgba(255, 255, 255, 0.7) !important;
+          transform: translateY(-1px);
+        }
+        .langgraph-toggle:active {
+          transform: translateY(0) scale(0.98);
+        }
+        .spinning-loader {
+          animation: spin 1.2s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .dot-flashing {
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          height: 12px;
+        }
+        .dot-flashing span {
+          width: 3px;
+          height: 3px;
+          border-radius: 50%;
+          background-color: var(--matcha-accent);
+          animation: dot-flashing 1.2s infinite ease-in-out;
+          display: inline-block;
+        }
+        .dot-flashing span:nth-child(2) { animation-delay: 0.2s; }
+        .dot-flashing span:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes dot-flashing {
+          0%, 100% { opacity: 0.2; transform: scale(0.8); }
+          50% { opacity: 1; transform: scale(1.1); }
+        }
+
+        .step-item-animate {
+          animation: step-in 0.35s ease-out forwards;
+        }
+        @keyframes step-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </MainLayout>

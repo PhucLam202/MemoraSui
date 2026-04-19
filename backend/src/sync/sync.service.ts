@@ -8,6 +8,7 @@ import { SuiIngestionService } from '../sui/sui-ingestion.service';
 import type { SuiNetwork } from '../sui/sui.types';
 import { MetricsService } from '../observability/metrics.service';
 import { maskWalletAddress } from '../common/redaction';
+import { WalletService } from '../wallet/wallet.service';
 
 type SyncJobStatus = 'queued' | 'running' | 'completed' | 'failed';
 
@@ -21,71 +22,98 @@ export class SyncService {
     private readonly suiIngestionService: SuiIngestionService,
     private readonly analyticsService: AnalyticsService,
     private readonly metricsService: MetricsService,
+    private readonly walletService: WalletService,
   ) {}
 
-  async createWalletSync(walletId: string, requestedBy?: string) {
-    try {
-      const wallet = await this.findWallet(walletId);
-      if (!wallet) {
-        this.logger.warn(`Sync requested for missing wallet: ${walletId}`);
-        throw new NotFoundException('Wallet not found.');
+  async createWalletSync(walletId: string, requestedBy?: string): Promise<{
+    job: Record<string, unknown> | null;
+    queued: boolean;
+    status: SyncJobStatus;
+    reused?: boolean;
+    skipped?: boolean;
+  }> {
+    const wallet = await this.findWallet(walletId);
+    if (!wallet) {
+      if (backendEnv.nodeEnv !== 'production' && this.isValidSuiAddress(walletId)) {
+        const createdWallet = await this.walletService.createWallet({
+          address: walletId,
+          network: backendEnv.network,
+          label: 'Auto-created sync wallet',
+          userId: requestedBy?.trim() || undefined,
+          isPrimary: Boolean(requestedBy?.trim()),
+        });
+        return this.createWalletSync(createdWallet.id, requestedBy);
       }
+      throw new NotFoundException('Wallet not found.');
+    }
 
-      if (requestedBy && wallet.userId && wallet.userId !== requestedBy) {
-        throw new ForbiddenException('You do not own this wallet.');
-      }
+    if (requestedBy && wallet.userId && wallet.userId !== requestedBy) {
+      throw new ForbiddenException('You do not own this wallet.');
+    }
 
-      const existingJob = await this.findActiveJobByWalletId(wallet.id);
-      if (existingJob) {
-        this.logger.log(`Reusing active sync job ${existingJob.id} for wallet ${maskWalletAddress(wallet.address)}.`);
-        return {
-          job: existingJob,
-          queued: existingJob.status === 'queued',
-          status: existingJob.status,
-          reused: true,
-        };
-      }
+    if (!this.isValidSuiAddress(wallet.address)) {
+      return {
+        job: null,
+        queued: false,
+        status: 'failed',
+        skipped: true,
+      };
+    }
 
-      const job = await this.upsertSyncJob({
-        walletId: wallet.id,
-        type: 'wallet-sync',
-        status: 'queued',
-        retryCount: 0,
-      });
+    const existingJob = await this.findActiveJobByWalletId(wallet.id);
+    if (existingJob) {
+      return {
+        job: existingJob,
+        queued: existingJob.status === 'queued',
+        status: existingJob.status as SyncJobStatus,
+        reused: true,
+      };
+    }
 
-      await this.scheduleRepeatSyncJob(wallet.id, wallet.address);
+    const job = await this.upsertSyncJob({
+      walletId: wallet.id,
+      type: 'wallet-sync',
+      status: 'queued',
+      retryCount: 0,
+    });
 
-      const queue = this.queueService.getQueue();
-      if (!queue) {
-        this.logger.warn(`Queue is unavailable, job created but not enqueued: ${job.id}`);
-        return {
-          job,
-          queued: false,
-          status: job.status,
-        };
-      }
+    await this.scheduleRepeatSyncJob(wallet.id, wallet.address);
 
-      await queue.add(
-        'wallet-sync',
-        { jobId: job.id },
-        {
-          jobId: job.id,
-        },
-      );
-
+    const queue = this.queueService.getQueue();
+    if (!queue) {
       return {
         job,
-        queued: true,
-        status: job.status,
+        queued: false,
+        status: job.status as SyncJobStatus,
       };
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      this.logger.error(`createWalletSync failed for walletId=${walletId}: ${detail}`);
-      throw error;
     }
+
+    await queue.add(
+      'wallet-sync',
+      { jobId: job.id },
+      {
+        jobId: job.id,
+      },
+    );
+
+    return {
+      job,
+      queued: true,
+      status: job.status as SyncJobStatus,
+    };
   }
 
-  async createWalletSyncByAddress(walletAddress: string, requestedBy?: string, network?: SuiNetwork) {
+  async createWalletSyncByAddress(
+    walletAddress: string,
+    requestedBy?: string,
+    network?: SuiNetwork,
+  ): Promise<{
+    job: Record<string, unknown> | null;
+    queued: boolean;
+    status: SyncJobStatus;
+    reused?: boolean;
+    skipped?: boolean;
+  }> {
     const wallet = await this.findWalletByAddress(walletAddress, network);
     if (!wallet) {
       throw new NotFoundException('Wallet not found.');
@@ -178,12 +206,28 @@ export class SyncService {
     });
 
     try {
-      this.logger.log(`Running sync job ${jobId} for wallet ${maskWalletAddress(wallet.address)} on ${wallet.network}.`);
+      this.logger.verbose(`Running sync job ${jobId} for wallet ${maskWalletAddress(wallet.address)} on ${wallet.network}.`);
+      if (!wallet.address || !wallet.network || !this.isValidSuiAddress(wallet.address)) {
+        const finishedAt = new Date();
+        const failed = await this.patchSyncJob(jobId, {
+          finishedAt,
+          status: 'failed',
+        });
+        this.metricsService.recordSyncJob('failed');
+        return {
+          job: failed,
+          skipped: true,
+          reason: 'Wallet address is not a valid Sui address.',
+        };
+      }
+      if (!wallet.address || !wallet.network) {
+        throw new NotFoundException('Wallet data is incomplete.');
+      }
       const snapshot = await this.suiIngestionService.syncWallet(wallet.address, wallet.network, {
         cursor: wallet.syncCursor ?? null,
       });
       this.logDataQualityChecks(wallet, snapshot);
-      this.logger.log(
+      this.logger.verbose(
         `Sync job ${jobId} fetched ${snapshot.transactions.length} tx, ${snapshot.coins.length} balances, ${snapshot.objects.length} objects on ${wallet.network}.`,
       );
 
@@ -270,6 +314,10 @@ export class SyncService {
 
     const wallet = await model.findOne(filter).lean<Record<string, unknown> | null>();
     return wallet ? this.mapWallet(wallet) : null;
+  }
+
+  private isValidSuiAddress(value: string) {
+    return /^0x[0-9a-f]+$/i.test(value.trim());
   }
 
   private async getSyncJob(jobId: string) {

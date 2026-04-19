@@ -13,6 +13,7 @@ export type OpenAiChatOptions = {
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
+  model?: string;
 };
 
 @Injectable()
@@ -40,7 +41,7 @@ export class OpenAiClient {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: backendEnv.openai.model,
+          model: options.model ?? backendEnv.openai.model,
           messages,
           max_completion_tokens: options.maxTokens ?? 700,
         }),

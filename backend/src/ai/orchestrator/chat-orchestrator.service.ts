@@ -10,8 +10,9 @@ import { analyzeMemory } from '../memory/memwal.analyze';
 import { joinFacts } from '../parsers/structured-output.parser';
 import { RouteToolsChain } from '../chains/route-tools.chain';
 import { ComposeAnswerChain } from '../chains/compose-answer.chain';
+import { LangGraphOrchestratorService } from '../graph/langgraph-orchestrator.service';
 import { ToolCallLoop } from './tool-call.loop';
-import { type AiHarnessInput, type AiHarnessOutput } from './ai-harness.types';
+import { type AiHarnessInput, type AiHarnessOutput, type AiStreamEmitter } from './ai-harness.types';
 import { AiToolRegistry } from './tool-registry';
 
 function buildAnswerContextDiagnostics(answerContext?: Record<string, unknown>) {
@@ -50,9 +51,19 @@ export class ChatOrchestratorService {
     private readonly composeAnswerChain: ComposeAnswerChain,
     private readonly toolRegistry: AiToolRegistry,
     private readonly memWalService: MemWalService,
+    private readonly langGraphOrchestrator: LangGraphOrchestratorService,
   ) {}
 
-  async answer(input: AiHarnessInput): Promise<AiHarnessOutput> {
+  async answer(input: AiHarnessInput, options?: { emit?: AiStreamEmitter }): Promise<AiHarnessOutput> {
+    try {
+      const graphOutput = await this.langGraphOrchestrator.answer(input, options);
+      if (graphOutput) {
+        return graphOutput;
+      }
+    } catch (error) {
+      this.logger.warn(`LangGraph orchestrator failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
     const wallet = await this.walletService.resolveWallet(input.walletId);
     const chatNamespace = buildChatNamespace(wallet.id);
     const insightsNamespace = buildInsightsNamespace(wallet.id);

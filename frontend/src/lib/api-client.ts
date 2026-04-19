@@ -47,6 +47,20 @@ async function requestJson<T>(input: string, init: RequestInit): Promise<T> {
   return payload as T;
 }
 
+async function requestRaw(input: string, init: RequestInit): Promise<Response> {
+  try {
+    const response = await fetch(input, init);
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status} for ${input}`);
+    }
+    return response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown network error';
+    console.error(`API network error for ${input}: ${message}`);
+    throw new Error(`Network error calling ${input}: ${message}`);
+  }
+}
+
 export async function fetchApi<T>(path: string, query?: Record<string, string | number | undefined | null>): Promise<T> {
   const input = buildUrl(path, query);
   return requestJson<T>(input, {
@@ -65,19 +79,28 @@ export async function postApi<T>(path: string, body: Record<string, unknown>): P
   });
 }
 
+export async function postApiStream(path: string, body: Record<string, unknown>): Promise<Response> {
+  const input = buildUrl(path);
+  return requestRaw(input, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify(body),
+  });
+}
+
 export function formatUsd(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(value);
 }
 
 export function formatTokenAmount(amount: number | string | null | undefined, decimals: number = 9, symbol: string = 'SUI') {
+  void decimals;
   if (amount === null || amount === undefined) return `0 ${symbol}`;
   const numeric = typeof amount === 'number' ? amount : Number(amount);
   if (Number.isNaN(numeric)) return `${amount} ${symbol}`;
-  
-  // If the number is very large, it's likely raw units (Mist)
-  // We assume if it's > 10^12 and we have decimals, it needs division
-  // But better to just trust the source. If we are passed a human amount, decimals should be 0 or null.
   
   return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${symbol}`;
 }

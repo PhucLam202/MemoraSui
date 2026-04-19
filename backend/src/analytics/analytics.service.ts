@@ -102,6 +102,11 @@ export class AnalyticsService {
     return snapshot.protocols;
   }
 
+  async getStakingSummary(walletAddress: string, network: SuiNetwork = backendEnv.network, range: WalletAnalyticsRange = { startMs: null, endMs: null }) {
+    const snapshot = await this.buildWalletAnalytics(walletAddress, network, range);
+    return snapshot.staking;
+  }
+
   async buildWalletAnalytics(
     walletAddress: string,
     network: SuiNetwork = backendEnv.network,
@@ -153,6 +158,7 @@ export class AnalyticsService {
     const activity = buildActivitySummary(events);
     const fees = buildFeeSummary(transactions);
     const protocols = buildProtocolSummary(events);
+    const staking = buildStakingSummary(events);
 
     return {
       walletAddress,
@@ -168,6 +174,7 @@ export class AnalyticsService {
       activity,
       fees,
       protocols,
+      staking,
     };
   }
 
@@ -562,6 +569,46 @@ function buildProtocolSummary(events: NormalizedWalletEvent[]): WalletProtocolSu
     interactionCount: events.length,
     topProtocols: [...protocols.values()].sort((left, right) => right.count - left.count).slice(0, 10),
     actionBreakdown,
+  };
+}
+
+function buildStakingSummary(events: NormalizedWalletEvent[]): WalletStakingSummary {
+  const stakingEvents = events.filter((e) => e.actionType === 'stake' || e.actionType === 'unstake');
+  const positions: WalletStakingSummary['positions'] = [];
+  let totalStaked = BigInt(0);
+
+  // Simplified logic for MVP: collect unique validators and sum them up
+  const validatorMap = new Map<string, bigint>();
+  for (const event of stakingEvents) {
+    const val = event.protocol || 'Default Validator';
+    const amount = BigInt(event.amount || '0');
+    const current = validatorMap.get(val) ?? BigInt(0);
+    
+    if (event.actionType === 'stake') {
+      validatorMap.set(val, current + amount);
+      totalStaked += amount;
+    } else {
+      validatorMap.set(val, current - amount);
+      totalStaked -= amount;
+    }
+  }
+
+  for (const [validator, amount] of validatorMap.entries()) {
+    if (amount > 0n) {
+      positions.push({
+        validator,
+        amount: amount.toString(),
+        stakedAtMs: null,
+        rewards: '0',
+        apy: 4.5, // Mock APY for Sui
+      });
+    }
+  }
+
+  return {
+    totalStaked: totalStaked.toString(),
+    totalRewards: '0',
+    positions,
   };
 }
 

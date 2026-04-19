@@ -6,13 +6,10 @@ import { ClayCard } from '@/components/shared/ClayCard';
 import { fetchApi, formatSui } from '@/lib/api-client';
 import { loadWalletSessionFromStorage } from '@/lib/wallet-session';
 import { 
-  BarChart3, 
   TrendingUp, 
   Zap, 
   Globe, 
   Activity, 
-  MousePointer2,
-  Calendar,
   Layers,
   ArrowRight
 } from 'lucide-react';
