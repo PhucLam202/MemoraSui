@@ -421,7 +421,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isAi, timestamp
         alignItems: isAi ? 'flex-start' : 'flex-end',
         gap: '8px',
         width: '100%',
-        animation: 'bubbleIn 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        animation: 'bubbleIn 420ms cubic-bezier(0.22, 1, 0.36, 1)',
       }}
     >
       <div

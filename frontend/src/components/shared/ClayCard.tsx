@@ -27,6 +27,8 @@ export const ClayCard: React.FC<ClayCardProps> = ({
   
   const combinedStyle: React.CSSProperties = {
     padding: paddingMap[padding],
+    position: 'relative',
+    overflow: 'hidden',
     ...style,
   };
 

@@ -99,60 +99,76 @@ export function HeaderWalletInfo() {
 
   return (
     <div className="wallet-info-wrap">
+      <div className="wallet-chip-row">
+        <div className="wallet-chip">
+          <span className="wallet-chip-label">Network</span>
+          <strong>Testnet</strong>
+        </div>
 
-      <div className="wallet-chip">
-        <span className="wallet-chip-label">Network</span>
-        <strong>Testnet</strong>
+        <div className="wallet-chip wallet-chip--address">
+          <span className="wallet-chip-label">Address</span>
+          <strong>{formatWalletAddress(resolvedAddress)}</strong>
+        </div>
+
+        <div className="wallet-chip">
+          <span className="wallet-chip-label">SUI Price</span>
+          <strong style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <TrendingUp size={14} className="price-icon" />
+            {formatUsd(suiPrice)}
+          </strong>
+        </div>
+
+        <div className="wallet-chip">
+          <span className="wallet-chip-label">Balance</span>
+          <strong>{balanceText}</strong>
+        </div>
       </div>
 
-      <div className="wallet-chip">
-        <span className="wallet-chip-label">Address</span>
-        <strong>{formatWalletAddress(resolvedAddress)}</strong>
+      <div className="wallet-action">
+        {walletConnection.status !== 'connected' ? (
+          <ClayButton
+            size="sm"
+            onClick={() => {
+              const primary = wallets.find(w => w.accounts.length > 0) || wallets[0];
+              if (primary) handleConnect(primary.name);
+            }}
+            disabled={wallets.length === 0 || isBusy}
+            style={{ whiteSpace: 'nowrap' }}
+          >
+            {isBusy ? 'Connecting...' : 'Connect Wallet'}
+          </ClayButton>
+        ) : (
+          <button 
+            onClick={() => handleDisconnect()}
+            className="disconnect-btn"
+            title="Disconnect Wallet"
+          >
+            <LogOut size={18} />
+          </button>
+        )}
       </div>
-
-      <div className="wallet-chip">
-        <span className="wallet-chip-label">SUI Price</span>
-        <strong style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <TrendingUp size={14} className="price-icon" />
-          {formatUsd(suiPrice)}
-        </strong>
-      </div>
-
-      <div className="wallet-chip">
-        <span className="wallet-chip-label">Balance</span>
-        <strong>{balanceText}</strong>
-      </div>
-
-      {walletConnection.status !== 'connected' ? (
-        <ClayButton
-          size="sm"
-          onClick={() => {
-            const primary = wallets.find(w => w.accounts.length > 0) || wallets[0];
-            if (primary) handleConnect(primary.name);
-          }}
-          disabled={wallets.length === 0 || isBusy}
-          style={{ whiteSpace: 'nowrap' }}
-        >
-          {isBusy ? 'Connecting...' : 'Connect Wallet'}
-        </ClayButton>
-      ) : (
-        <button 
-          onClick={() => handleDisconnect()}
-          className="disconnect-btn"
-          title="Disconnect Wallet"
-        >
-          <LogOut size={18} />
-        </button>
-      )}
 
       <style jsx>{`
         .wallet-info-wrap {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 10px;
           min-width: 0;
           flex-wrap: wrap;
           justify-content: flex-end;
+        }
+
+        .wallet-chip-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+          flex-wrap: wrap;
+        }
+
+        .wallet-action {
+          display: flex;
+          align-items: center;
         }
 
         .price-icon {
@@ -166,7 +182,7 @@ export function HeaderWalletInfo() {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: var(--white);
+          background: rgba(255, 255, 255, 0.92);
           box-shadow: var(--shadow-outer);
           color: #ff6b6b;
           transition: var(--transition-fast);
@@ -191,10 +207,23 @@ export function HeaderWalletInfo() {
           min-height: 38px;
           padding: 6px 14px;
           border-radius: 14px;
-          background: var(--white);
-          box-shadow: var(--shadow-outer);
+          background: rgba(255, 255, 255, 0.84);
+          border: 1px solid rgba(223, 231, 221, 0.84);
+          box-shadow: var(--shadow-soft);
+          backdrop-filter: blur(10px);
           color: var(--matcha-accent);
           max-width: 220px;
+          transition: transform var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
+        }
+
+        .wallet-chip:hover {
+          transform: translateY(-1px);
+          box-shadow: var(--shadow-outer);
+          background: rgba(255, 255, 255, 0.94);
+        }
+
+        .wallet-chip--address {
+          max-width: 260px;
         }
 
 
@@ -233,7 +262,7 @@ export function HeaderWalletInfo() {
         }
 
         @media (max-width: 1200px) {
-          .wallet-chip:nth-child(3) {
+          .wallet-chip-row .wallet-chip:nth-child(3) {
             display: none;
           }
         }
@@ -247,7 +276,7 @@ export function HeaderWalletInfo() {
             max-width: none;
           }
 
-          .wallet-chip:nth-child(2) {
+          .wallet-chip--address {
             display: none;
           }
         }
@@ -257,6 +286,7 @@ export function HeaderWalletInfo() {
             min-height: 34px;
             padding: 5px 12px;
             border-radius: 12px;
+            max-width: 100%;
           }
 
           .wallet-chip-label {

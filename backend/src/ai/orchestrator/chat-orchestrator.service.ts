@@ -15,6 +15,8 @@ import { ToolCallLoop } from './tool-call.loop';
 import { type AiHarnessInput, type AiHarnessOutput, type AiStreamEmitter } from './ai-harness.types';
 import { AiToolRegistry } from './tool-registry';
 import { TransferTool } from '../tools/transfer.tool';
+import { BatchTransferTool } from '../tools/batch-transfer.tool';
+import { TransferNFTTool } from '../tools/transfer-nft.tool';
 import { loadAgentsConfig } from '../config';
 
 function buildAnswerContextDiagnostics(answerContext?: Record<string, unknown>) {
@@ -55,11 +57,75 @@ export class ChatOrchestratorService {
     private readonly memWalService: MemWalService,
     private readonly langGraphOrchestrator: LangGraphOrchestratorService,
     private readonly transferTool: TransferTool,
+    private readonly batchTransferTool: BatchTransferTool,
+    private readonly transferNFTTool: TransferNFTTool,
   ) {}
 
   async answer(input: AiHarnessInput, options?: { emit?: AiStreamEmitter }): Promise<AiHarnessOutput> {
     const wallet = await this.walletService.resolveWallet(input.walletId);
 
+    // Check for NFT transfer first (more specific)
+    const nftTransferIntent = this.detectNFTTransferIntent(input.question);
+    if (nftTransferIntent) {
+      const nftRequest = this.transferNFTTool.parseNFTTransfer(input.question, wallet.network);
+      if (nftRequest) {
+        return {
+          intent: 'transfer_nft',
+          answer: `Xác nhận chuyển NFT/Object \`${nftRequest.objectId}\` đến \`${nftRequest.recipient}\`. Vui lòng xác nhận giao dịch trong ví của bạn.`,
+          toolCalls: [],
+          memoryReads: [],
+          memoryWrites: [],
+          analyzedFacts: '',
+          routeSource: 'classifier',
+          plannedToolCalls: [],
+          nftTransferRequest: nftRequest,
+        };
+      }
+      return {
+        intent: 'transfer_nft',
+        answer: 'Không thể phân tích lệnh chuyển NFT. Vui lòng nói rõ Object ID và địa chỉ ví nhận (ví dụ: "chuyển NFT 0xABC... cho 0xDEF...").',
+        toolCalls: [],
+        memoryReads: [],
+        memoryWrites: [],
+        analyzedFacts: '',
+        routeSource: 'classifier',
+        plannedToolCalls: [],
+      };
+    }
+
+    // Check for batch transfer
+    const batchTransferIntent = this.detectBatchTransferIntent(input.question);
+    if (batchTransferIntent) {
+      const batchRequest = this.batchTransferTool.parseBatchTransfer(input.question, wallet.network);
+      if (batchRequest) {
+        const recipientList = batchRequest.recipients
+          .map((r) => `- ${r.amount} SUI → \`${r.address}\``)
+          .join('\n');
+        return {
+          intent: 'batch_transfer',
+          answer: `Xác nhận chuyển **${batchRequest.totalAmount} SUI** đến ${batchRequest.recipients.length} địa chỉ:\n\n${recipientList}\n\nVui lòng xác nhận giao dịch trong ví của bạn.`,
+          toolCalls: [],
+          memoryReads: [],
+          memoryWrites: [],
+          analyzedFacts: '',
+          routeSource: 'classifier',
+          plannedToolCalls: [],
+          batchTransferRequest: batchRequest,
+        };
+      }
+      return {
+        intent: 'batch_transfer',
+        answer: 'Không thể phân tích lệnh chuyển tiền hàng loạt. Vui lòng nói rõ số lượng SUI và các địa chỉ ví nhận (ví dụ: "chuyển 0.1 SUI cho 0xABC... và 0.2 SUI cho 0xDEF...").',
+        toolCalls: [],
+        memoryReads: [],
+        memoryWrites: [],
+        analyzedFacts: '',
+        routeSource: 'classifier',
+        plannedToolCalls: [],
+      };
+    }
+
+    // Regular single transfer
     const transferIntent = this.detectTransferIntent(input.question);
     if (transferIntent) {
       const txRequest = this.transferTool.parseTransfer(input.question, wallet.network);
@@ -218,6 +284,21 @@ export class ChatOrchestratorService {
         recalledMemories: recalledTexts,
       }),
     };
+  }
+
+  private detectNFTTransferIntent(question: string): boolean {
+    return /(transfer|send|gửi|gui|chuyển|chuyen)\s.*(nft|object|collectible)|(nft|object|collectible)\s.*(transfer|send|gửi|gui|chuyển|chuyen)/i.test(question);
+  }
+
+  private detectBatchTransferIntent(question: string): boolean {
+    const normalized = question.toLowerCase();
+    // Check for explicit batch/multiple keywords
+    if (/(batch|nhiều|nhieu|multiple|many)\s.*(transfer|send|gửi|gui|chuyển|chuyen)|(send|transfer|gửi|gui|chuyển|chuyen)\s.*(nhiều|nhieu|multiple|many|batch)/i.test(normalized)) {
+      return true;
+    }
+    // Check for multiple addresses
+    const addressMatches = normalized.match(/0x[0-9a-f]{40,}/g);
+    return addressMatches !== null && addressMatches.length > 1 && /(transfer|send|gửi|gui|chuyển|chuyen)/i.test(normalized);
   }
 
   private detectTransferIntent(question: string): boolean {

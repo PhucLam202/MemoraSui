@@ -9,7 +9,7 @@ import { Wallet, Activity, Zap, Shield, ArrowRight } from 'lucide-react';
 
 export default function LandingPage() {
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: 'var(--matcha-bg)' }}>
+    <div className="landing-shell page-shell">
       {/* Top Navbar */}
       <nav style={{
         position: 'fixed',
@@ -17,20 +17,21 @@ export default function LandingPage() {
         left: 0,
         right: 0,
         height: '80px',
-        backgroundColor: 'rgba(244, 248, 242, 0.8)',
-        backdropFilter: 'blur(24px)',
-        borderBottom: '1px solid var(--border-color)',
+        background: 'rgba(244, 248, 242, 0.76)',
+        backdropFilter: 'blur(20px)',
+        borderBottom: '1px solid rgba(223, 231, 221, 0.82)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 var(--spacing-xl)',
+        padding: '0 clamp(1rem, 3vw, var(--spacing-xl))',
         zIndex: 1000,
+        boxShadow: '0 12px 30px rgba(63, 80, 63, 0.05)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ 
             width: '40px', 
             height: '40px', 
-            backgroundColor: 'var(--matcha-primary)', 
+            background: 'linear-gradient(135deg, var(--matcha-primary), var(--matcha-accent))', 
             borderRadius: '12px',
             display: 'flex',
             alignItems: 'center',
@@ -43,7 +44,7 @@ export default function LandingPage() {
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--matcha-accent)', fontFamily: 'var(--font-heading)' }}>memoraSui</h1>
         </div>
         
-        <div className="desktop-only" style={{ display: 'flex', gap: '32px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+        <div className="desktop-only" style={{ display: 'flex', gap: '28px', fontWeight: 600, color: 'var(--text-secondary)' }}>
           <a href="#features" style={{ transition: 'color 0.2s', textDecoration: 'none' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--text-primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}>Features</a>
           <a href="#community" style={{ transition: 'color 0.2s', textDecoration: 'none' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--text-primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}>Community</a>
         </div>
@@ -56,22 +57,22 @@ export default function LandingPage() {
       </nav>
 
       {/* Main Content */}
-      <main style={{ paddingTop: '120px', paddingBottom: '80px', maxWidth: '1200px', margin: '0 auto', paddingLeft: 'var(--spacing-xl)', paddingRight: 'var(--spacing-xl)' }}>
+      <main className="landing-main" style={{ paddingTop: '120px', paddingBottom: '80px', maxWidth: '1200px', margin: '0 auto', paddingLeft: 'var(--spacing-xl)', paddingRight: 'var(--spacing-xl)' }}>
         
         {/* Hero Section */}
-        <section style={{ 
+        <section className="hero-grid fade-in-up" style={{ 
           display: 'grid', 
           gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', 
           gap: '64px',
           alignItems: 'center',
           marginBottom: '120px'
-        }} className="hero-grid">
+        }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div>
             <div style={{ marginBottom: '16px' }}>
               <ClayBadge variant="accent" size="sm">Powered by AI & Sui</ClayBadge>
             </div>
-              <h2 style={{ fontSize: 'clamp(3rem, 5vw, 4.5rem)', lineHeight: 1.1, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+              <h2 style={{ fontSize: 'clamp(3rem, 5vw, 4.5rem)', lineHeight: 1.04, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--text-primary)' }}>
                 The Sanctuary <br />
                 For Your <span style={{ color: 'var(--matcha-primary)' }}>Sui Assets</span>
               </h2>
@@ -83,7 +84,7 @@ export default function LandingPage() {
             
             <div style={{ display: 'flex', gap: '16px', marginTop: '16px', flexWrap: 'wrap' }}>
               <Link href="/dashboard" style={{ textDecoration: 'none' }}>
-                <span style={{ display: 'inline-block', padding: '0 8px' }}>
+                <span style={{ display: 'inline-block' }}>
                   <ClayButton size="lg">
                     Launch App
                   </ClayButton>
@@ -99,15 +100,17 @@ export default function LandingPage() {
               width: '100%', 
               maxWidth: '500px', 
               aspectRatio: '1', 
-              backgroundColor: 'var(--white)',
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(244,248,242,0.96) 100%)',
               borderRadius: '48px',
               padding: '24px',
-              boxShadow: 'var(--shadow-outer)',
+              boxShadow: '0 28px 80px rgba(63, 80, 63, 0.14)',
+              border: '1px solid rgba(223, 231, 221, 0.9)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               overflow: 'hidden',
-              zIndex: 10
+              zIndex: 10,
+              animation: 'float-in 720ms var(--transition-spring) both',
             }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img 
@@ -126,16 +129,16 @@ export default function LandingPage() {
         </section>
 
         {/* Feature Highlights */}
-        <section id="features" style={{ marginBottom: '80px' }}>
+        <section id="features" className="section-shell" style={{ marginBottom: '80px' }}>
           <div style={{ textAlign: 'center', marginBottom: '64px' }}>
             <div style={{ marginBottom: '24px' }}>
               <ClayBadge variant="secondary" size="md">Deep Insights</ClayBadge>
             </div>
-            <h3 style={{ fontSize: '3.5rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Sculpted for you.</h3>
+            <h3 style={{ fontSize: 'clamp(2.4rem, 4vw, 3.5rem)', fontWeight: 800, letterSpacing: '-0.03em' }}>Sculpted for you.</h3>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '32px' }}>
-            <ClayCard padding="lg" style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%' }}>
+            <ClayCard padding="lg" className="float-in stagger-1" style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%' }}>
               <div style={{ width: '64px', height: '64px', backgroundColor: 'var(--matcha-highlight)', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--matcha-primary)' }}>
                 <Activity size={32} />
               </div>
@@ -145,7 +148,7 @@ export default function LandingPage() {
               </div>
             </ClayCard>
 
-            <ClayCard padding="lg" style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%' }}>
+            <ClayCard padding="lg" className="float-in stagger-2" style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%' }}>
               <div style={{ width: '64px', height: '64px', backgroundColor: 'var(--matcha-highlight)', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--matcha-primary)' }}>
                 <Zap size={32} />
               </div>
@@ -155,7 +158,7 @@ export default function LandingPage() {
               </div>
             </ClayCard>
 
-            <ClayCard padding="lg" style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%' }}>
+            <ClayCard padding="lg" className="float-in stagger-3" style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%' }}>
               <div style={{ width: '64px', height: '64px', backgroundColor: 'var(--matcha-highlight)', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--matcha-primary)' }}>
                 <Shield size={32} />
               </div>
@@ -170,7 +173,7 @@ export default function LandingPage() {
       </main>
 
       {/* Footer */}
-      <footer style={{ backgroundColor: '#E1EBE0', padding: '64px var(--spacing-xl)', textAlign: 'center' }}>
+      <footer id="community" style={{ background: 'linear-gradient(180deg, rgba(225, 235, 224, 0.95) 0%, rgba(208, 223, 206, 0.98) 100%)', padding: '64px var(--spacing-xl)', textAlign: 'center', borderTop: '1px solid rgba(223, 231, 221, 0.9)' }}>
          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
           <div style={{ width: '32px', height: '32px', backgroundColor: 'var(--matcha-primary)', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
             <Wallet size={16} />
@@ -181,6 +184,11 @@ export default function LandingPage() {
       </footer>
 
       <style jsx>{`
+        .landing-shell {
+          min-height: 100vh;
+          background: transparent;
+        }
+
         @media (max-width: 960px) {
           .desktop-only {
             display: none !important;
@@ -191,6 +199,16 @@ export default function LandingPage() {
           }
           .hero-grid > div:first-child {
             align-items: center;
+          }
+          .hero-grid > div:last-child {
+            order: -1;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .landing-main {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
           }
         }
       `}</style>

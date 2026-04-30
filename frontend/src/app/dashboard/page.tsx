@@ -113,43 +113,56 @@ export default function DashboardPage() {
   return (
     <MainLayout activePath="/dashboard">
       <WalletConnectGate>
-        <div className="dashboard-container" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)', width: '100%' }}>
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-md)' }}>
-            <div>
-              <h1 style={{ fontSize: '3rem', marginBottom: '12px', letterSpacing: '-0.02em', lineHeight: 1.1 }}>Good Morning!</h1>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '1.15rem' }}>
+        <div className="dashboard-container page-shell fade-in-up" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)', width: '100%' }}>
+          <header className="dashboard-hero page-hero" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-md)' }}>
+            <div style={{ display: 'grid', gap: '12px' }}>
+              <span className="page-kicker">Portfolio overview</span>
+              <h1 style={{ fontSize: 'clamp(2.5rem, 4.2vw, 3.6rem)', marginBottom: 0, lineHeight: 1.02 }}>Good Morning!</h1>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '1.05rem', maxWidth: '52ch' }}>
                 Your portfolio is looking healthy on <span style={{ color: 'var(--matcha-accent)', fontWeight: 700 }}>{networkName}</span>.
               </p>
             </div>
             {snapshot?.generatedAt && (
-               <div className="sync-badge">
-                 <Clock size={14} /> 
-                 <span>Synced {new Date(snapshot.generatedAt).toLocaleTimeString()}</span>
-               </div>
+              <div className="sync-badge">
+                <Clock size={14} />
+                <span>Synced {new Date(snapshot.generatedAt).toLocaleTimeString()}</span>
+              </div>
             )}
           </header>
 
           {error && (
-            <ClayCard variant="flat" style={{ borderLeft: '4px solid #f56565', backgroundColor: '#fff5f5' }}>
+            <ClayCard variant="flat" style={{ borderLeft: '4px solid #f56565', background: 'linear-gradient(180deg, #fff7f7 0%, #fff1f1 100%)' }}>
               <strong>Load Error:</strong> {error}
             </ClayCard>
           )}
 
           {/* Key Stats Section */}
           <section className="highlights-grid">
-            <div className="highlight-card main-balance">
-               <ClayCard padding="md" style={{ height: '100%', background: 'linear-gradient(135deg, var(--matcha-primary), var(--matcha-accent))', color: 'white', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                    <div className="icon-circle mini" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}><Wallet size={20} /></div>
-                    <ShieldCheck size={20} style={{ opacity: 0.6 }} />
-                  </div>
-                  <div style={{ fontSize: '0.85rem', opacity: 0.9, fontWeight: 600 }}>Total Wallet Value</div>
-                  <div style={{ fontSize: '2.4rem', fontWeight: 700, margin: '4px 0' }}>{loading ? '...' : formatUsd(portfolio?.totalWalletValueUsd)}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
-                    <span style={{ padding: '2px 6px', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: '6px' }}>+2.4%</span>
-                    <span style={{ opacity: 0.8 }}>Past 24h</span>
-                  </div>
-               </ClayCard>
+            <div className="highlight-card main-balance float-in">
+              <ClayCard
+                padding="md"
+                style={{
+                  height: '100%',
+                  background: 'linear-gradient(135deg, var(--matcha-primary), var(--matcha-accent))',
+                  color: 'white',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  boxShadow: '0 22px 60px rgba(66, 102, 66, 0.24)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <div className="icon-circle mini" style={{ backgroundColor: 'rgba(255,255,255,0.2)', color: 'white' }}><Wallet size={20} /></div>
+                  <ShieldCheck size={20} style={{ opacity: 0.68 }} />
+                </div>
+                <div style={{ fontSize: '0.8rem', opacity: 0.9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Total Wallet Value</div>
+                <div style={{ fontSize: 'clamp(2rem, 3vw, 2.75rem)', fontWeight: 800, margin: '8px 0 6px', lineHeight: 1 }}>{loading ? '...' : formatUsd(portfolio?.totalWalletValueUsd)}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
+                  <span style={{ padding: '4px 8px', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: '999px' }}>+2.4%</span>
+                  <span style={{ opacity: 0.82 }}>Past 24h</span>
+                </div>
+              </ClayCard>
             </div>
 
             <div className="stats-subgrid">
@@ -169,9 +182,12 @@ export default function DashboardPage() {
           <section className="main-content-grid">
             {/* Left Content: Assets List */}
             <div className="assets-overview">
-              <ClayCard padding="lg">
+              <ClayCard padding="lg" className="section-surface">
                 <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                  <h3 style={{ fontSize: '1.4rem' }}>Your Top Assets</h3>
+                  <div style={{ display: 'grid', gap: '4px' }}>
+                    <span className="page-kicker">Portfolio detail</span>
+                    <h3 style={{ fontSize: '1.4rem', margin: 0 }}>Your Top Assets</h3>
+                  </div>
                   <Link href="/assets" className="view-all-link">
                     View All <ChevronRight size={16} />
                   </Link>
@@ -186,8 +202,11 @@ export default function DashboardPage() {
 
             {/* Right Content: Quick Actions & Snapshot */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)' }}>
-               <ClayCard padding="lg">
-                  <h3 style={{ marginBottom: '20px', fontSize: '1.2rem' }}>Quick Navigation</h3>
+              <ClayCard padding="lg" className="section-surface">
+                <div style={{ display: 'grid', gap: '4px', marginBottom: '20px' }}>
+                  <span className="page-kicker">Quick actions</span>
+                  <h3 style={{ fontSize: '1.2rem', margin: 0 }}>Quick Navigation</h3>
+                </div>
                   <div className="action-grid">
                     <Link href="/activity" className="action-tile">
                       <div className="tile-icon"><History size={20} /></div>
@@ -206,15 +225,15 @@ export default function DashboardPage() {
                       <span>AI Chat</span>
                     </Link>
                   </div>
-               </ClayCard>
+              </ClayCard>
 
-               <ClayCard variant="flat" padding="md" style={{ border: '2px dashed var(--border-color)', display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <div className="icon-circle small"><Zap size={18} /></div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Smart Summary</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>You had {activity?.incomingCount} deposits this week!</div>
-                  </div>
-               </ClayCard>
+              <ClayCard variant="flat" padding="md" style={{ border: '1px dashed rgba(223, 231, 221, 0.95)', display: 'flex', alignItems: 'center', gap: '16px', background: 'linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(238,243,236,0.9) 100%)' }}>
+                <div className="icon-circle small"><Zap size={18} /></div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Smart Summary</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>You had {activity?.incomingCount} deposits this week!</div>
+                </div>
+              </ClayCard>
             </div>
           </section>
         </div>
@@ -226,6 +245,7 @@ export default function DashboardPage() {
           grid-template-columns: 1fr 1fr;
           gap: var(--spacing-md);
           margin-bottom: var(--spacing-sm);
+          align-items: stretch;
         }
 
         .stats-subgrid {
@@ -238,19 +258,21 @@ export default function DashboardPage() {
           display: grid;
           grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
           gap: var(--spacing-md);
+          align-items: start;
         }
 
         .sync-badge {
           display: flex;
           align-items: center;
           gap: 6px;
-          background-color: var(--white);
+          background: rgba(255, 255, 255, 0.86);
           padding: 8px 16px;
           border-radius: 99px;
-          box-shadow: var(--shadow-outer);
+          box-shadow: var(--shadow-soft);
           font-size: 0.85rem;
           font-weight: 600;
           color: var(--text-secondary);
+          border: 1px solid rgba(223, 231, 221, 0.9);
         }
 
         .icon-circle {
@@ -286,6 +308,10 @@ export default function DashboardPage() {
           text-decoration: underline;
         }
 
+        .section-surface {
+          backdrop-filter: blur(10px);
+        }
+
         .action-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
@@ -298,18 +324,23 @@ export default function DashboardPage() {
           justify-content: center;
           gap: 10px;
           padding: 20px;
-          background-color: var(--matcha-bg);
+          background: rgba(244, 248, 242, 0.85);
           border-radius: 20px;
-          border: 1px solid transparent;
-          transition: all 0.3s ease;
+          border: 1px solid rgba(223, 231, 221, 0.85);
+          transition:
+            transform var(--transition-fast),
+            box-shadow var(--transition-fast),
+            border-color var(--transition-fast),
+            background-color var(--transition-fast);
           font-weight: 600;
           color: var(--text-primary);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.65);
         }
         .action-tile:hover {
-          background-color: var(--white);
+          background-color: rgba(255,255,255,0.95);
           border-color: var(--matcha-primary);
           box-shadow: var(--shadow-outer);
-          transform: translateY(-4px);
+          transform: translateY(-3px);
         }
         .tile-icon {
           color: var(--matcha-accent);
@@ -328,7 +359,7 @@ export default function DashboardPage() {
         .loading-shimmer {
           background: linear-gradient(90deg, var(--matcha-bg) 25%, var(--matcha-highlight) 50%, var(--matcha-bg) 75%);
           background-size: 200% 100%;
-          animation: shimmer 1.5s infinite;
+          animation: shimmer 1.4s infinite;
           border-radius: 16px;
         }
 
@@ -340,6 +371,16 @@ export default function DashboardPage() {
         @media (max-width: 1024px) {
           .highlights-grid, .main-content-grid {
             grid-template-columns: 1fr !important;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .dashboard-container {
+            gap: var(--spacing-md) !important;
+          }
+
+          .action-grid {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>

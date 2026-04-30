@@ -37,12 +37,13 @@ export const ActivityItem: React.FC<ActivityItemProps> = ({ data, onClick }) => 
       style={{
         display: 'flex',
         alignItems: 'center',
-        padding: '20px',
-        backgroundColor: 'var(--white)',
+        padding: '18px 20px',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(244,248,242,0.96) 100%)',
         borderRadius: '24px',
         boxShadow: 'var(--shadow-outer)',
+        border: '1px solid rgba(223, 231, 221, 0.9)',
         cursor: 'pointer',
-        transition: 'var(--transition-slow)',
+        transition: 'transform var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast)',
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -92,9 +93,9 @@ export const ActivityItem: React.FC<ActivityItemProps> = ({ data, onClick }) => 
 
       <style jsx>{`
         .activity-item-card:hover {
-          transform: translateY(-4px) scale(1.005);
+          transform: translateY(-3px);
           box-shadow: var(--shadow-hover);
-          background-color: var(--matcha-bg);
+          background: linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(238,243,236,0.96) 100%);
         }
         .activity-item-card:active {
           transform: translateY(0) scale(1);

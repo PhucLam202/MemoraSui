@@ -42,6 +42,8 @@ export const ClayButton: React.FC<ClayButtonProps> = ({
     alignItems: 'center',
     justifyContent: 'center',
     gap: '8px',
+    transform: 'translateY(0)',
+    whiteSpace: 'nowrap',
     ...style,
   };
 
@@ -50,6 +52,7 @@ export const ClayButton: React.FC<ClayButtonProps> = ({
       className={`${baseClass} ${className}`}
       style={combinedStyle}
       disabled={props.disabled ? true : undefined}
+      aria-busy={props.disabled || undefined}
       {...props}
     >
       {children}

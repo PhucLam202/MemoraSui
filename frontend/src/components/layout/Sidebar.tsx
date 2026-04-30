@@ -33,17 +33,19 @@ const SidebarItem = ({ href, label, icon, active, isCollapsed }: SidebarItemProp
         display: 'flex',
         alignItems: 'center',
         gap: isCollapsed ? '0' : '14px',
-        padding: isCollapsed ? '12px' : '14px 20px',
+        padding: isCollapsed ? '12px' : '14px 18px',
         justifyContent: isCollapsed ? 'center' : 'flex-start',
         borderRadius: isCollapsed ? '16px' : '20px',
         color: active ? 'var(--matcha-accent)' : 'var(--text-secondary)',
-        fontWeight: active ? 700 : 500,
-        transition: 'var(--transition-slow)',
-        backgroundColor: active ? 'var(--matcha-highlight)' : 'transparent',
-        boxShadow: active ? 'var(--shadow-outer)' : 'none',
+        fontWeight: active ? 700 : 600,
+        transition: 'transform var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast)',
+        background: active ? 'rgba(221, 232, 216, 0.92)' : 'rgba(255, 255, 255, 0.36)',
+        border: '1px solid rgba(223, 231, 221, 0.84)',
+        boxShadow: active ? 'var(--shadow-soft)' : 'none',
         marginBottom: '4px',
         overflow: 'hidden',
         whiteSpace: 'nowrap',
+        backdropFilter: 'blur(8px)',
       }}
     >
       <div style={{
@@ -60,9 +62,10 @@ const SidebarItem = ({ href, label, icon, active, isCollapsed }: SidebarItemProp
       
       <style jsx>{`
         .sidebar-item:hover {
-          background-color: var(--matcha-highlight);
+          background: rgba(255, 255, 255, 0.74);
           color: var(--matcha-accent);
-          transform: ${isCollapsed ? 'scale(1.05)' : 'translateX(4px)'};
+          transform: ${isCollapsed ? 'scale(1.03)' : 'translateX(4px)'};
+          box-shadow: var(--shadow-outer);
         }
         .sidebar-item:active {
           transform: scale(0.98);
@@ -99,13 +102,15 @@ export const Sidebar = ({ activePath }: { activePath?: string }) => {
       position: 'fixed',
       left: 0,
       top: 0,
-      padding: isCollapsed ? 'var(--spacing-xl) 12px' : 'var(--spacing-xl) var(--spacing-md)',
+      padding: isCollapsed ? 'var(--spacing-lg) 12px' : 'var(--spacing-lg) var(--spacing-md)',
       display: 'flex',
       flexDirection: 'column',
-      backgroundColor: 'var(--matcha-bg)',
-      borderRight: '1px solid var(--border-color)',
+      background: 'linear-gradient(180deg, rgba(247, 250, 245, 0.94) 0%, rgba(236, 242, 233, 0.96) 100%)',
+      borderRight: '1px solid rgba(223, 231, 221, 0.9)',
+      boxShadow: '8px 0 30px rgba(56, 77, 56, 0.06)',
+      backdropFilter: 'blur(18px)',
       zIndex: 1000,
-      transition: 'width var(--transition-slow), padding var(--transition-slow)',
+      transition: 'width var(--transition-slow), padding var(--transition-slow), box-shadow var(--transition-fast)',
     }}>
       {/* Header / Logo / Toggle Section */}
       <div style={{ 
@@ -113,14 +118,14 @@ export const Sidebar = ({ activePath }: { activePath?: string }) => {
         display: 'flex', 
         alignItems: 'center', 
         height: '44px', // Match logo height for absolute centering
-        marginBottom: '48px',
+        marginBottom: '40px',
         width: '100%'
       }}>
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
           gap: '14px', 
-          paddingLeft: isCollapsed ? '0' : '12px', 
+          paddingLeft: isCollapsed ? '0' : '8px', 
           width: '100%',
           justifyContent: 'flex-start',
           transition: 'padding var(--transition-slow)'
@@ -128,7 +133,7 @@ export const Sidebar = ({ activePath }: { activePath?: string }) => {
           <div style={{ 
             width: '44px', 
             height: '44px', 
-            backgroundColor: 'var(--matcha-primary)', 
+            background: 'linear-gradient(135deg, var(--matcha-primary), var(--matcha-accent))', 
             borderRadius: '14px',
             boxShadow: 'var(--shadow-outer)',
             display: 'flex',
@@ -141,7 +146,7 @@ export const Sidebar = ({ activePath }: { activePath?: string }) => {
           </div>
           {!isCollapsed && (
             <div style={{ overflow: 'hidden', paddingRight: '40px' }}>
-               <h2 style={{ fontSize: '1.25rem', lineHeight: 1, marginBottom: '2px', whiteSpace: 'nowrap' }}>memoraSui</h2>
+               <h2 style={{ fontSize: '1.2rem', lineHeight: 1, marginBottom: '4px', whiteSpace: 'nowrap' }}>memoraSui</h2>
                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', letterSpacing: '0.05em', fontWeight: 600, whiteSpace: 'nowrap' }}>PORTFOLIO</span>
             </div>
           )}
@@ -154,13 +159,13 @@ export const Sidebar = ({ activePath }: { activePath?: string }) => {
           title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
           style={{
             position: 'absolute',
-            right: isCollapsed ? '-12px' : '0', // Touches the sidebar border when collapsed, stays within padding when expanded
+            right: '-16px',
             top: '50%',
             transform: 'translateY(-50%)',
             width: '32px',
             height: '32px',
             borderRadius: '10px',
-            backgroundColor: 'var(--white)',
+            background: 'rgba(255, 255, 255, 0.9)',
             boxShadow: 'var(--shadow-outer)',
             display: 'flex',
             alignItems: 'center',
@@ -177,7 +182,7 @@ export const Sidebar = ({ activePath }: { activePath?: string }) => {
       </div>
 
       {/* Navigation */}
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+      <nav style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
         <SidebarItem 
           href="/dashboard" 
           label="Dashboard" 
@@ -228,7 +233,7 @@ export const Sidebar = ({ activePath }: { activePath?: string }) => {
 
       <style jsx>{`
         .collapse-toggle-mini:hover {
-          background-color: var(--matcha-highlight) !important;
+          background: rgba(221, 232, 216, 0.96) !important;
           transform: scale(1.1);
           color: var(--matcha-primary) !important;
         }

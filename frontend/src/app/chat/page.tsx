@@ -19,6 +19,26 @@ type TransactionRequest = {
   network: string;
 };
 
+type BatchTransferRecipient = {
+  address: string;
+  amountMist: string;
+  amount: number;
+};
+
+type BatchTransferRequest = {
+  recipients: BatchTransferRecipient[];
+  network: string;
+  totalAmount: number;
+  totalAmountMist: string;
+};
+
+type NFTTransferRequest = {
+  objectId: string;
+  recipient: string;
+  network: string;
+  objectType?: string;
+};
+
 type UiMessage = {
   id: string;
   text: string;
@@ -227,6 +247,8 @@ export default function ChatPage() {
   const [session, setSession] = useState<WalletSession | null>(null);
   const walletId = session?.walletId ?? session?.address ?? null;
   const [pendingTx, setPendingTx] = useState<TransactionRequest | null>(null);
+  const [pendingBatchTx, setPendingBatchTx] = useState<BatchTransferRequest | null>(null);
+  const [pendingNFTTx, setPendingNFTTx] = useState<NFTTransferRequest | null>(null);
   const [txStatus, setTxStatus] = useState<'idle' | 'signing' | 'success' | 'error'>('idle');
   const [txDigest, setTxDigest] = useState<string | null>(null);
 
@@ -250,6 +272,7 @@ export default function ChatPage() {
   ]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const activeSession = useMemo(
     () => sessions.find((item) => item.id === sessionId) ?? null,
@@ -441,6 +464,9 @@ export default function ChatPage() {
 
     const content = input.trim();
     setInput('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
     const userMessage: UiMessage = {
       id: crypto.randomUUID(),
       text: content,
@@ -584,6 +610,12 @@ export default function ChatPage() {
       if (resolvedResponse.transactionRequest) {
         setPendingTx(resolvedResponse.transactionRequest as TransactionRequest);
         setTxStatus('idle');
+      } else if (resolvedResponse.batchTransferRequest) {
+        setPendingBatchTx(resolvedResponse.batchTransferRequest as BatchTransferRequest);
+        setTxStatus('idle');
+      } else if (resolvedResponse.nftTransferRequest) {
+        setPendingNFTTx(resolvedResponse.nftTransferRequest as NFTTransferRequest);
+        setTxStatus('idle');
         setTxDigest(null);
       }
 
@@ -610,6 +642,9 @@ export default function ChatPage() {
   function handleNewChat() {
     setSessionId(undefined);
     setInput('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
     setChatError(null);
     setFlowSteps([]);
     setPendingTx(null);
@@ -627,13 +662,32 @@ export default function ChatPage() {
   }
 
   async function handleConfirmTransfer() {
-    if (!pendingTx) return;
+    if (!pendingTx && !pendingBatchTx && !pendingNFTTx) return;
     setTxStatus('signing');
 
     try {
       const tx = new Transaction();
-      const [coin] = tx.splitCoins(tx.gas, [BigInt(pendingTx.amountMist)]);
-      tx.transferObjects([coin], pendingTx.recipient);
+
+      // Handle regular transfer
+      if (pendingTx) {
+        const [coin] = tx.splitCoins(tx.gas, [BigInt(pendingTx.amountMist)]);
+        tx.transferObjects([coin], pendingTx.recipient);
+      }
+
+      // Handle batch transfer using PTB (Programmable Transaction Block)
+      if (pendingBatchTx) {
+        // Split gas coin into multiple coins for each recipient
+        for (let i = 0; i < pendingBatchTx.recipients.length; i++) {
+          const recipient = pendingBatchTx.recipients[i];
+          const [coin] = tx.splitCoins(tx.gas, [BigInt(recipient.amountMist)]);
+          tx.transferObjects([coin], recipient.address);
+        }
+      }
+
+      // Handle NFT transfer
+      if (pendingNFTTx) {
+        tx.transferObjects([pendingNFTTx.objectId], pendingNFTTx.recipient);
+      }
 
       const result = await dAppKit.signAndExecuteTransaction({ transaction: tx });
       const digest =
@@ -642,6 +696,8 @@ export default function ChatPage() {
       setTxStatus('success');
       setTxDigest(digest ?? 'submitted');
       setPendingTx(null);
+      setPendingBatchTx(null);
+      setPendingNFTTx(null);
       setMessages((prev) => [
         ...prev,
         {
@@ -670,12 +726,14 @@ export default function ChatPage() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: isCompactLayout ? 'minmax(0, 1fr)' : '280px minmax(0, 1fr)',
+          gridTemplateColumns: isCompactLayout ? 'minmax(0, 1fr)' : '240px minmax(0, 1.55fr)',
           gridTemplateRows: isCompactLayout ? 'auto minmax(0, 1fr)' : 'minmax(0, 1fr)',
-          height: 'calc(100vh - 180px)', /* Adjusted to fit better with header and padding */
-          gap: 'var(--spacing-lg)',
+          minHeight: 'calc(100vh - 108px)',
+          height: 'calc(100vh - 108px)',
+          gap: '24px',
           width: '100%',
           maxWidth: '100%',
+          alignItems: 'stretch',
         }}
       >
         <ClayCard
@@ -683,38 +741,45 @@ export default function ChatPage() {
             display: 'flex',
             flexDirection: 'column',
             gap: '16px',
-            padding: '20px',
+            padding: '22px',
             overflow: 'hidden',
+            width: '100%',
+            minWidth: 0,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', paddingBottom: '4px' }}>
-            <div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '2px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.8 }}>Chat History</div>
-              <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1rem', fontWeight: 800 }}>Saved sessions</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', paddingBottom: '12px', borderBottom: '1.5px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--matcha-accent)', marginBottom: '2px', fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.9 }}>Chat History</div>
+                <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>Sessions</div>
+              </div>
             </div>
+            
             <button 
               onClick={handleNewChat} 
               disabled={!walletId}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px',
-                padding: '6px 10px',
-                borderRadius: '12px',
-                backgroundColor: 'var(--white)',
-                color: 'var(--matcha-accent)',
-                fontSize: '0.75rem',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '12px 16px',
+                borderRadius: '16px',
+                backgroundColor: 'var(--matcha-primary)',
+                color: 'white',
+                fontSize: '0.85rem',
                 fontWeight: 700,
                 border: 'none',
                 boxShadow: 'var(--shadow-outer)',
                 cursor: walletId ? 'pointer' : 'not-allowed',
-                transition: 'all 0.2s ease',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 opacity: walletId ? 1 : 0.5,
+                width: '100%',
               }}
               className="new-chat-btn-premium"
             >
-              <MessageSquarePlus size={14} />
-              <span>New chat</span>
+              <MessageSquarePlus size={18} />
+              <span>New Conversation</span>
             </button>
           </div>
 
@@ -748,42 +813,69 @@ export default function ChatPage() {
                     style={{
                       width: '100%',
                       textAlign: 'left',
-                      padding: '16px 20px',
-                      borderRadius: '20px',
-                      border: 'none',
+                      padding: '14px 16px',
+                      borderRadius: '18px',
+                      border: '1.5px solid transparent',
                       backgroundColor: isActive ? 'var(--white)' : 'transparent',
-                      boxShadow: isActive ? '0 10px 30px rgba(0,0,0,0.05)' : 'none',
+                      borderColor: isActive ? 'rgba(123, 174, 127, 0.15)' : 'transparent',
+                      boxShadow: isActive ? 'var(--shadow-soft)' : 'none',
                       cursor: 'pointer',
-                      transition: 'all 0.2s ease',
+                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                       display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
+                      alignItems: 'center',
+                      gap: '12px',
                       overflow: 'hidden',
+                      position: 'relative',
                     }}
                   >
-                    <div
-                      style={{
-                        fontFamily: 'var(--font-heading)',
-                        fontSize: '0.95rem',
-                        fontWeight: 700,
-                        color: 'var(--text-primary)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        width: '100%',
-                      }}
-                      title={item.title || 'Untitled chat'}
-                    >
-                      {item.title || 'Untitled chat'}
-                    </div>
                     <div style={{ 
-                      fontSize: '0.75rem', 
+                      width: '36px', 
+                      height: '36px', 
+                      borderRadius: '12px', 
+                      backgroundColor: isActive ? 'var(--matcha-highlight)' : 'rgba(0,0,0,0.03)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                       color: isActive ? 'var(--matcha-accent)' : 'var(--text-secondary)',
-                      fontWeight: 600,
-                      opacity: 0.8
+                      flexShrink: 0,
+                      transition: 'all 0.2s ease'
                     }}>
-                      {formatSessionTime(item.lastMessageAt)}
+                      <Activity size={16} />
                     </div>
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div
+                        style={{
+                          fontFamily: 'var(--font-heading)',
+                          fontSize: '0.88rem',
+                          fontWeight: 700,
+                          color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                        title={item.title || 'Untitled chat'}
+                      >
+                        {item.title || 'Untitled chat'}
+                      </div>
+                      <div style={{ 
+                        fontSize: '0.7rem', 
+                        color: 'var(--text-secondary)',
+                        fontWeight: 600,
+                        opacity: 0.6
+                      }}>
+                        {formatSessionTime(item.lastMessageAt)}
+                      </div>
+                    </div>
+                    {isActive && (
+                      <div style={{ 
+                        width: '4px', 
+                        height: '16px', 
+                        borderRadius: '2px', 
+                        backgroundColor: 'var(--matcha-primary)',
+                        position: 'absolute',
+                        right: '8px'
+                      }} />
+                    )}
                   </button>
                 );
               })}
@@ -791,10 +883,10 @@ export default function ChatPage() {
           )}
         </ClayCard>
 
-        <ClayCard style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', padding: 0 }}>
+        <ClayCard style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', padding: 0, width: '100%', minWidth: 0 }}>
           <div
             style={{
-              padding: '16px 20px',
+              padding: '18px 22px',
               borderBottom: '1px solid var(--border-color)',
               background: 'linear-gradient(180deg, rgba(255,255,255,0.62), rgba(247,244,235,0.72))',
               display: 'flex',
@@ -817,10 +909,10 @@ export default function ChatPage() {
             style={{
               flex: 1,
               overflowY: 'auto',
-              padding: '20px',
+              padding: '28px 24px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '20px',
+              gap: '28px',
               background:
                 'radial-gradient(circle at top left, rgba(190, 215, 196, 0.22), transparent 28%), linear-gradient(180deg, rgba(249,247,241,0.95), rgba(244,240,231,0.88))',
             }}
@@ -1082,7 +1174,7 @@ export default function ChatPage() {
               </>
             )}
 
-            {pendingTx && txStatus !== 'success' && (
+            {(pendingTx || pendingBatchTx || pendingNFTTx) && txStatus !== 'success' && (
               <div
                 style={{
                   margin: '8px 0',
@@ -1098,10 +1190,14 @@ export default function ChatPage() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--matcha-accent)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                    Xác nhận giao dịch
+                    {pendingBatchTx ? 'Batch Transfer' : pendingNFTTx ? 'NFT Transfer' : 'Xác nhận giao dịch'}
                   </span>
                   <button
-                    onClick={() => setPendingTx(null)}
+                    onClick={() => {
+                      setPendingTx(null);
+                      setPendingBatchTx(null);
+                      setPendingNFTTx(null);
+                    }}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px' }}
                   >
                     <X size={16} />
@@ -1109,20 +1205,75 @@ export default function ChatPage() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
-                    <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Số lượng</span>
-                    <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{pendingTx.amount} SUI</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', gap: '12px' }}>
-                    <span style={{ color: 'var(--text-secondary)', fontWeight: 600, flexShrink: 0 }}>Đến</span>
-                    <span style={{ fontFamily: 'monospace', color: 'var(--text-primary)', wordBreak: 'break-all', textAlign: 'right' }}>
-                      {pendingTx.recipient}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
-                    <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Mạng</span>
-                    <span style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>{pendingTx.network}</span>
-                  </div>
+                  {pendingTx && (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Số lượng</span>
+                        <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{pendingTx.amount} SUI</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', gap: '12px' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600, flexShrink: 0 }}>Đến</span>
+                        <span style={{ fontFamily: 'monospace', color: 'var(--text-primary)', wordBreak: 'break-all', textAlign: 'right' }}>
+                          {pendingTx.recipient}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Mạng</span>
+                        <span style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>{pendingTx.network}</span>
+                      </div>
+                    </>
+                  )}
+
+                  {pendingBatchTx && (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Tổng số lượng</span>
+                        <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{pendingBatchTx.totalAmount} SUI</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Số người nhận</span>
+                        <span style={{ color: 'var(--text-primary)' }}>{pendingBatchTx.recipients.length} địa chỉ</span>
+                      </div>
+                      <div style={{ maxHeight: '120px', overflowY: 'auto', marginTop: '4px' }}>
+                        {pendingBatchTx.recipients.map((r, idx) => (
+                          <div key={idx} style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                            {r.amount} SUI → {r.address.slice(0, 8)}...{r.address.slice(-6)}
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Mạng</span>
+                        <span style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>{pendingBatchTx.network}</span>
+                      </div>
+                    </>
+                  )}
+
+                  {pendingNFTTx && (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', gap: '12px' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600, flexShrink: 0 }}>Object ID</span>
+                        <span style={{ fontFamily: 'monospace', color: 'var(--text-primary)', wordBreak: 'break-all', textAlign: 'right' }}>
+                          {pendingNFTTx.objectId}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', gap: '12px' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600, flexShrink: 0 }}>Đến</span>
+                        <span style={{ fontFamily: 'monospace', color: 'var(--text-primary)', wordBreak: 'break-all', textAlign: 'right' }}>
+                          {pendingNFTTx.recipient}
+                        </span>
+                      </div>
+                      {pendingNFTTx.objectType && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Type</span>
+                          <span style={{ color: 'var(--text-primary)', fontSize: '0.7rem' }}>{pendingNFTTx.objectType}</span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Mạng</span>
+                        <span style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>{pendingNFTTx.network}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {txStatus === 'error' && (
@@ -1144,7 +1295,11 @@ export default function ChatPage() {
                     )}
                   </ClayButton>
                   <button
-                    onClick={() => setPendingTx(null)}
+                    onClick={() => {
+                      setPendingTx(null);
+                      setPendingBatchTx(null);
+                      setPendingNFTTx(null);
+                    }}
                     disabled={txStatus === 'signing'}
                     style={{
                       padding: '8px 16px',
@@ -1168,35 +1323,104 @@ export default function ChatPage() {
 
           <div
             style={{
-              padding: 'var(--spacing-lg)',
+              padding: '24px',
               borderTop: '1px solid var(--border-color)',
-              backgroundColor: 'var(--matcha-bg)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
+              backgroundColor: 'rgba(255, 255, 255, 0.4)',
+              backdropFilter: 'blur(10px)',
+              width: '100%',
             }}
           >
             {chatError && (
-              <div style={{ fontSize: '0.85rem', color: '#B85C5C' }}>{chatError}</div>
+              <div style={{ fontSize: '0.85rem', color: '#B85C5C', marginBottom: '12px', padding: '0 8px' }}>{chatError}</div>
             )}
 
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <div style={{ flex: 1 }}>
-                <ClayInput
-                  placeholder={walletId ? 'Type your question...' : 'Connect/auth wallet first...'}
+            <div 
+              style={{ 
+                display: 'flex', 
+                gap: '12px', 
+                alignItems: 'flex-end', 
+                width: '100%',
+                backgroundColor: 'var(--white)',
+                padding: '12px 16px',
+                borderRadius: '24px',
+                border: '1.5px solid rgba(123, 174, 127, 0.18)',
+                boxShadow: '0 10px 40px rgba(62, 83, 62, 0.08), var(--shadow-inner)',
+                transition: 'all 0.3s ease',
+              }}
+              className="chat-input-container-premium"
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <textarea
+                  ref={textareaRef}
+                  placeholder={walletId ? 'Nhập câu hỏi của bạn tại đây...' : 'Vui lòng kết nối ví để bắt đầu...'}
                   value={input}
-                  onChange={(event) => setInput(event.target.value)}
+                  onChange={(event) => {
+                    setInput(event.target.value);
+                    // Auto-resize
+                    if (textareaRef.current) {
+                      textareaRef.current.style.height = 'auto';
+                      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+                    }
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && !event.shiftKey) {
                       event.preventDefault();
                       void handleSend();
                     }
                   }}
+                  style={{
+                    width: '100%',
+                    minHeight: '44px',
+                    maxHeight: '200px',
+                    padding: '10px 8px',
+                    border: 'none',
+                    background: 'transparent',
+                    fontFamily: 'var(--font-body)',
+                    fontSize: '1rem',
+                    color: 'var(--text-primary)',
+                    outline: 'none',
+                    resize: 'none',
+                    display: 'block',
+                    lineHeight: '1.5',
+                  }}
+                  disabled={!walletId || sending}
                 />
               </div>
-              <ClayButton onClick={() => void handleSend()} disabled={!walletId || sending || loadingMessages}>
-                {sending ? 'Sending...' : 'Send'}
-              </ClayButton>
+              <button
+                onClick={() => void handleSend()}
+                disabled={!walletId || sending || loadingMessages || !input.trim()}
+                style={{ 
+                  flexShrink: 0, 
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '16px',
+                  backgroundColor: !input.trim() || sending ? 'var(--matcha-highlight)' : 'var(--matcha-primary)',
+                  color: 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  cursor: !input.trim() || sending ? 'not-allowed' : 'pointer',
+                  boxShadow: !input.trim() || sending ? 'none' : '0 6px 16px rgba(123, 174, 127, 0.3)',
+                }}
+                className="send-button-premium"
+              >
+                {sending ? (
+                  <Loader2 size={20} className="spinning-loader" />
+                ) : (
+                  <SendHorizonal size={20} style={{ transform: 'translateX(1px)' }} />
+                )}
+              </button>
+            </div>
+            <div style={{ 
+              textAlign: 'center', 
+              marginTop: '12px', 
+              fontSize: '0.72rem', 
+              color: 'var(--text-secondary)', 
+              opacity: 0.6,
+              fontWeight: 500 
+            }}>
+              Sử dụng Shift + Enter để xuống dòng
             </div>
           </div>
         </ClayCard>
@@ -1204,22 +1428,37 @@ export default function ChatPage() {
 
       <style jsx>{`
         .session-item-btn:hover {
-          background-color: rgba(255, 255, 255, 0.5) !important;
+          background-color: rgba(123, 174, 127, 0.04) !important;
+          border-color: rgba(123, 174, 127, 0.1) !important;
+          transform: translateX(4px);
         }
         .session-item-btn:active {
-          transform: scale(0.98);
+          transform: scale(0.98) translateX(4px);
         }
         .session-item-btn.active:hover {
           background-color: var(--white) !important;
+          border-color: rgba(123, 174, 127, 0.2) !important;
           transform: none;
         }
-        .new-chat-btn-premium:hover {
-          background-color: var(--matcha-highlight) !important;
+        .new-chat-btn-premium:hover:not(:disabled) {
+          filter: brightness(1.05);
           transform: translateY(-2px);
-          box-shadow: 0 10px 25px rgba(0,0,0,0.08) !important;
+          box-shadow: 0 12px 28px rgba(123, 174, 127, 0.25) !important;
         }
-        .new-chat-btn-premium:active {
-          transform: scale(0.96);
+        .new-chat-btn-premium:active:not(:disabled) {
+          transform: translateY(0) scale(0.98);
+        }
+        .chat-input-container-premium:focus-within {
+          border-color: var(--matcha-primary) !important;
+          box-shadow: 0 12px 48px rgba(62, 83, 62, 0.12), var(--shadow-inner) !important;
+          transform: translateY(-2px);
+        }
+        .send-button-premium:hover:not(:disabled) {
+          transform: scale(1.08) rotate(-5deg);
+          filter: brightness(1.1);
+        }
+        .send-button-premium:active:not(:disabled) {
+          transform: scale(0.92);
         }
         .langgraph-toggle:hover {
           background-color: rgba(255, 255, 255, 0.7) !important;
@@ -1258,10 +1497,10 @@ export default function ChatPage() {
         }
 
         .step-item-animate {
-          animation: step-in 0.35s ease-out forwards;
+          animation: step-in 0.22s ease-out forwards;
         }
         @keyframes step-in {
-          from { opacity: 0; transform: translateY(6px); }
+          from { opacity: 0; transform: translateY(2px); }
           to { opacity: 1; transform: translateY(0); }
         }
       `}</style>

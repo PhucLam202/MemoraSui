@@ -87,6 +87,8 @@ const intentToToolNames: Record<WalletQuestionIntent, string[]> = {
   research: [],
   staking: [],
   transfer: [],
+  batch_transfer: [],
+  transfer_nft: [],
   unknown: [],
 };
 

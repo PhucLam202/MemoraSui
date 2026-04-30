@@ -10,6 +10,8 @@ export type WalletQuestionIntent =
   | 'research'
   | 'staking'
   | 'transfer'
+  | 'batch_transfer'
+  | 'transfer_nft'
   | 'unknown';
 
 @Injectable()
@@ -17,6 +19,26 @@ export class ClassifyQuestionChain {
   run(question: string): WalletQuestionIntent {
     const normalized = question.toLowerCase();
 
+    // Check for NFT transfer first (more specific)
+    if (/(transfer|send|gửi|gui|chuyển|chuyen)\s.*(nft|object|collectible)|(nft|object|collectible)\s.*(transfer|send|gửi|gui|chuyển|chuyen)/i.test(normalized)) {
+      return 'transfer_nft';
+    }
+
+    // Check for batch/multi transfer
+    if (/(batch|nhiều|nhieu|multiple|many)\s.*(transfer|send|gửi|gui|chuyển|chuyen)|(send|transfer|gửi|gui|chuyển|chuyen)\s.*(nhiều|nhieu|multiple|many|batch)/i.test(normalized)) {
+      const addressCount = (normalized.match(/0x[0-9a-f]{40,}/g) || []).length;
+      if (addressCount > 1) {
+        return 'batch_transfer';
+      }
+    }
+
+    // Check for multiple addresses in the question
+    const addressMatches = normalized.match(/0x[0-9a-f]{40,}/g);
+    if (addressMatches && addressMatches.length > 1 && /(transfer|send|gửi|gui|chuyển|chuyen)/i.test(normalized)) {
+      return 'batch_transfer';
+    }
+
+    // Regular single transfer
     if (/(chuyển|chuyen|transfer|send|gửi|gui)\s.*(sui|token|coin|\d)|(send|transfer)\s.*\bto\b|0x[0-9a-f]{40,}/i.test(normalized)) {
       return 'transfer';
     }

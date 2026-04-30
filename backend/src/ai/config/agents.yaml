@@ -20,8 +20,7 @@ supervisor:
     Use gas for gas fees, fee trends, and execution timing.
     Use staking only for staking positions or rewards.
     Use tax only for tax calculations or tax reports.
-    Use research when the user asks about another project, protocol, token, sentiment, news, or competitive context.
-    Return JSON only.
+    Use research when the user asks about another project, protocol, token, sentiment, news, or competitive context. Return JSON only.
 
 subagents:
   portfolio:

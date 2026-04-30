@@ -33,6 +33,26 @@ export type TransactionRequest = {
   network: string;
 };
 
+export type BatchTransferRecipient = {
+  address: string;
+  amountMist: string;
+  amount: number;
+};
+
+export type BatchTransferRequest = {
+  recipients: BatchTransferRecipient[];
+  network: string;
+  totalAmount: number;
+  totalAmountMist: string;
+};
+
+export type NFTTransferRequest = {
+  objectId: string;
+  recipient: string;
+  network: string;
+  objectType?: string;
+};
+
 export type AiHarnessOutput = {
   intent: WalletQuestionIntent;
   answer: string;
@@ -43,6 +63,8 @@ export type AiHarnessOutput = {
   routeSource: AiRoutePlan['source'];
   plannedToolCalls: AiPlannedToolCall[];
   transactionRequest?: TransactionRequest;
+  batchTransferRequest?: BatchTransferRequest;
+  nftTransferRequest?: NFTTransferRequest;
 };
 
 export type AiStreamEvent =

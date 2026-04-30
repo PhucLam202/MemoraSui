@@ -14,7 +14,7 @@ export const ClayInput: React.FC<ClayInputProps> = ({
   ...props
 }) => {
   return (
-    <div className={`clay-input-wrapper ${className}`} style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+    <div className={`clay-input-wrapper ${className}`} style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', minWidth: 0, alignSelf: 'stretch' }}>
       {label && (
         <label style={{ 
           fontFamily: 'var(--font-heading)', 
@@ -41,7 +41,11 @@ export const ClayInput: React.FC<ClayInputProps> = ({
         <input 
           className="clay-input" 
           style={{ 
-            paddingLeft: icon ? '44px' : '20px'
+            paddingLeft: icon ? '44px' : '20px',
+            width: '100%',
+            minWidth: 0,
+            display: 'block',
+            boxSizing: 'border-box',
           }}
           {...props} 
         />
