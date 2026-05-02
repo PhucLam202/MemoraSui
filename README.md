@@ -1,66 +1,143 @@
-# 🤖 AI-Powered Web3 Portfolio Assistant (Sui)
+# Sui Portfolio Assistant
 
-Chương trình trợ lý AI thông minh tích hợp sâu với hệ sinh thái **Sui**, giúp người dùng phá bỏ rào cản giữa dữ liệu blockchain phức tạp và các quyết định tài chính sáng suốt.
+An AI-powered Web3 portfolio assistant for the Sui ecosystem.
 
-## 🌟 Trải Nghiệm Cốt Lõi: "Trò Chuyện Với Ví Của Bạn"
+The project combines wallet authentication, blockchain data sync, and an agentic AI layer so users can ask natural-language questions about their holdings, activity, fees, and on-chain context.
 
-Thay vì phải tự tra cứu và phân tích hàng ngàn giao dịch thô, ứng dụng cung cấp một giao diện hội thoại tự nhiên, nơi AI đóng vai trò như một chuyên gia tư vấn danh mục đầu tư cá nhân 24/7.
+## Overview
 
-### Các tình huống ví dụ:
-- *"Hãy phân tích tỷ trọng tài sản trong ví của tôi."*
-- *"Tại sao phí gas của tôi tuần này lại cao bất thường?"*
-- *"Dự án Scallop hiện tại có tin tức gì mới không?"*
-- *"Tổng giá trị tài sản của tôi đã thay đổi thế nào từ đầu tháng?"*
+Instead of manually inspecting raw transactions, the app turns wallet data into a conversational experience:
 
----
+- Ask what changed in your portfolio over time.
+- Understand gas and fee spikes.
+- Look up protocol or market context for a wallet action.
+- Continue long-running conversations with long-term memory support.
 
-## 🛠️ Kiến Trúc AI Đa Tác Nhân (Agentic Architecture)
+## Key Features
 
-Hệ thống không đơn thuần là một chatbot, mà là một mạng lưới các **Sub-agents** chuyên biệt được điều phối bởi một **Supervisor AI** mạnh mẽ.
+- Sui wallet-first authentication and session handling.
+- AI agent orchestration for portfolio, gas, and research tasks.
+- Long-term memory integration via MemWal.
+- Normalized blockchain event processing for grounded responses.
+- Real-time sync pipeline backed by queue workers.
+- Monorepo structure with separate frontend, backend, worker, and shared packages.
 
-### 1. Supervisor Agent (Điều Phối Viên)
-Đóng vai trò "bộ não" trung tâm, phân tích ý định của người dùng và lập kế hoạch thực thi bằng cách điều phối các sub-agents phù hợp.
+## Architecture
 
-### 2. Portfolio Agent (Chuyên Gia Danh Mục)
-- ** holdings & Allocation:** Phân tích chi tiết các loại token, NFT và các vị thế DeFi.
-- **PnL Tracking:** Giải thích biến động lãi/lỗ dựa trên dữ liệu giá thực tế và lịch sử giao dịch.
-- **Risk Analysis:** Cảnh báo các rủi ro về nồng độ tài sản hoặc các vị thế không an toàn.
+The backend is the source of truth for wallet auth, sync, analytics, and AI tool responses.
 
-### 3. Gas & Fee Agent (Chuyên Gia Tối Ưu Phí)
-- **Spending Trends:** Phân tích thói quen chi tiêu phí gas.
-- **Outlier Detection:** Phát hiện các giao dịch bị lỗi hoặc tốn phí cao bất thường.
-- **Optimization:** Đưa ra lời khuyên về thời điểm thực hiện giao dịch để tiết kiệm chi phí.
+### Services
 
-### 4. Research Agent (Chuyên Gia Nghiên Cứu)
-- **Protocol Insights:** Thu thập dữ liệu real-time về TVL, khối lượng giao dịch và rủi ro của các giao thức.
-- **Market Sentiment:** Phân tích tâm lý thị trường từ các nguồn tin tức và mạng xã hội.
-- **Tokenomics:** Deep-dive vào cơ chế token của các dự án mới trên Sui.
+- `frontend`: Next.js app for the user interface.
+- `backend`: NestJS API for auth, wallet sync, AI orchestration, and domain logic.
+- `worker`: BullMQ-based background worker for queue processing.
+- `shared`: Common TypeScript types and utilities shared across packages.
 
----
+### AI Flow
 
-## 🧠 Khả Năng Ghi Nhớ Dài Hạn (MemWal)
+1. A user sends a wallet-related question.
+2. The backend authenticates the request and loads the relevant wallet context.
+3. The supervisor agent routes the task to specialized sub-agents.
+4. The system grounds the response against normalized on-chain data before returning it.
 
-Khác với các AI thông thường, trợ lý của chúng tôi tích hợp **MemWal** - hệ thống bộ nhớ dài hạn giúp AI:
-- Nhớ được các thói quen và sở thích của người dùng qua các phiên chat.
-- Theo dõi tiến trình của các câu hỏi phức tạp kéo dài nhiều ngày.
-- Cá nhân hóa các câu trả lời dựa trên ngữ cảnh lịch sử của riêng bạn.
+## Tech Stack
 
----
+- Next.js 15
+- React 19
+- NestJS 11
+- TypeScript
+- Sui SDK
+- LangGraph / LangChain
+- BullMQ
+- MongoDB / Mongoose
+- Redis / ioredis
+- MemWal
 
-## 🏗️ Nền Tảng Kỹ Thuật Phục Vụ AI
+## Repository Structure
 
-Để AI có thể trả lời chính xác và không "ảo giác", hệ thống phía sau cung cấp một nguồn dữ liệu sạch và tin cậy:
-- **Normalized Event Engine:** Chuyển đổi dữ liệu blockchain thô từ Sui thành các sự kiện ngôn ngữ tự nhiên dễ hiểu.
-- **Real-time Sync:** Dữ liệu ví luôn được đồng bộ mới nhất từ Sui RPC & Indexer.
-- **Grounded Verification:** Mọi câu trả lời của AI đều được đối soát (grounded) với dữ liệu thực tế từ Backend trước khi gửi tới người dùng.
+```txt
+frontend/   Next.js app
+backend/    NestJS API
+worker/     Queue worker
+shared/     Shared types and helpers
+```
 
----
+## Prerequisites
 
-## 🚀 Bắt Đầu
+- Node.js 20+
+- pnpm 10+
+- MongoDB
+- Redis
+- A Sui wallet and network access to Sui RPC / indexer services
 
-1. **Kết nối ví Sui:** Ứng dụng tự động lập chỉ mục (index) dữ liệu toàn bộ lịch sử của bạn.
-2. **Đồng bộ dữ liệu:** Quá trình chuẩn hóa dữ liệu diễn ra tự động trong vài giây.
-3. **Bắt đầu trò chuyện:** AI đã sẵn sàng để giải đáp mọi thắc mắc về tài sản của bạn.
+## Environment Setup
 
----
-© 2026 Sui Project A - Nâng tầm trải nghiệm Web3 bằng Trí tuệ nhân tạo.
+Each package provides an example environment file:
+
+- `backend/.env.example`
+- `frontend/.env.example`
+- `worker/.env.example`
+
+Copy the relevant example files and fill in the required values for your local setup.
+
+### Important Backend Variables
+
+- `SUI_NETWORK`
+- `SUI_RPC_URL`
+- `MONGODB_URI`
+- `REDIS_URL`
+- `AUTH_TOKEN_SECRET`
+- `MEMWAL_ENABLED`
+- `MEMWAL_KEY`
+
+## Getting Started
+
+Install dependencies:
+
+```bash
+pnpm install
+```
+
+Run the frontend and backend:
+
+```bash
+pnpm dev
+```
+
+Run frontend, backend, and worker together:
+
+```bash
+pnpm dev:all
+```
+
+Build all main packages:
+
+```bash
+pnpm build
+```
+
+Type-check the workspace:
+
+```bash
+pnpm typecheck
+```
+
+## Package Scripts
+
+- `pnpm dev` - run frontend and backend in parallel.
+- `pnpm dev:all` - run frontend, backend, and worker in parallel.
+- `pnpm build` - build shared, backend, and frontend.
+- `pnpm lint` - lint shared, backend, and frontend.
+- `pnpm typecheck` - run TypeScript checks across all packages.
+
+## Security Notes
+
+- Never commit real wallet secrets, private keys, or production tokens.
+- Keep `AUTH_TOKEN_SECRET` unique per environment.
+- Treat blockchain data as untrusted input and validate everything before use.
+
+## License
+
+This project is intended to be released under the MIT License.
+
+See the `LICENSE` file for the full text.
