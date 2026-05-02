@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   useCurrentAccount,
   useCurrentClient,
+  useCurrentNetwork,
+  useDAppKit,
   useWalletConnection,
   useWallets,
 } from '@mysten/dapp-kit-react';
@@ -24,10 +26,12 @@ type HeaderBalanceState =
 
 
 export function HeaderWalletInfo() {
+  const dAppKit = useDAppKit();
   const currentClient = useCurrentClient();
   const currentAccount = useCurrentAccount();
   const walletConnection = useWalletConnection();
   const wallets = useWallets();
+  const currentNetwork = useCurrentNetwork();
 
   const { session, handleConnect, handleDisconnect, isBusy } = useWalletAuth({
     appName: 'memoraSui Portfolio',
@@ -48,9 +52,9 @@ export function HeaderWalletInfo() {
     let isCancelled = false;
     setBalanceState({ status: 'loading' });
 
-    currentClient
+    (currentClient as any)
       .getBalance({ owner: currentAccount.address })
-      .then((response) => {
+      .then((response: { balance?: { balance?: string } }) => {
         if (isCancelled) return;
         setBalanceState({
           status: 'loaded',
@@ -102,7 +106,18 @@ export function HeaderWalletInfo() {
       <div className="wallet-chip-row">
         <div className="wallet-chip">
           <span className="wallet-chip-label">Network</span>
-          <strong>Testnet</strong>
+          <select
+            className="network-select"
+            value={currentNetwork ?? 'mainnet'}
+            onChange={(e) => {
+              const chosen = e.target.value as 'mainnet' | 'testnet' | 'devnet';
+              localStorage.setItem('sui-portfolio:preferred-network', chosen);
+              dAppKit.switchNetwork(chosen);
+            }}
+          >
+            <option value="mainnet">Mainnet</option>
+            <option value="testnet">Testnet</option>
+          </select>
         </div>
 
         <div className="wallet-chip wallet-chip--address">

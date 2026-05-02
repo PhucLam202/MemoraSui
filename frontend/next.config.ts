@@ -2,6 +2,9 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@sui-portfolio/shared'],
+  experimental: {
+    proxyTimeout: 60000,
+  },
   async rewrites() {
     const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:4000/api';
 

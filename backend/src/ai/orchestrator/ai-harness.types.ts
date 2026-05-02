@@ -33,6 +33,69 @@ export type TransactionRequest = {
   network: string;
 };
 
+export type ExecutionRequestKind = 'swap' | 'rebalance' | 'deepbook_order';
+
+export type ExecutionPreviewAllocation = {
+  symbol: string;
+  currentPct?: number;
+  targetPct: number;
+};
+
+export type ExecutionPreview = {
+  actionLabel: string;
+  fromToken?: string;
+  toToken?: string;
+  amountIn?: string;
+  expectedAmountOut?: string;
+  market?: string;
+  side?: 'buy' | 'sell';
+  orderType?: 'limit' | 'market';
+  price?: string;
+  quantity?: string;
+  slippagePct: number;
+  route?: string[];
+  protocols?: string[];
+  allocations?: ExecutionPreviewAllocation[];
+};
+
+export type ExecutionRisk = {
+  warnings: string[];
+  touchedProtocols: string[];
+  gasEstimateMist?: string;
+  expectedBalanceChanges?: Array<{
+    symbol: string;
+    amount: string;
+  }>;
+  requiresElevatedConfirmation?: boolean;
+  elevatedReason?: string;
+  rejectCode?: string;
+  securityChecks?: {
+    slippagePct?: number;
+    priceImpactPct?: number;
+    complexityScore?: number;
+    gasReserve?: {
+      availableMist?: string;
+      requiredMist: string;
+      keepGasMist?: string;
+      minGasBufferMist: string;
+    };
+  };
+};
+
+export type ExecutionRequest = {
+  kind: ExecutionRequestKind;
+  network: 'mainnet';
+  transactionKindBytesBase64: string;
+  transactionJson: string;
+  quoteExpiresAt: string;
+  summary: {
+    title: string;
+    detail: string;
+  };
+  preview: ExecutionPreview;
+  risk: ExecutionRisk;
+};
+
 export type BatchTransferRecipient = {
   address: string;
   amountMist: string;
@@ -65,6 +128,7 @@ export type AiHarnessOutput = {
   transactionRequest?: TransactionRequest;
   batchTransferRequest?: BatchTransferRequest;
   nftTransferRequest?: NFTTransferRequest;
+  executionRequest?: ExecutionRequest;
 };
 
 export type AiStreamEvent =

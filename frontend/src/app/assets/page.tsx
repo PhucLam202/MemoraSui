@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
+import { useCurrentAccount } from '@mysten/dapp-kit-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ClayCard } from '@/components/shared/ClayCard';
 import { fetchApi, formatTokenAmount, formatUsd } from '@/lib/api-client';
@@ -40,20 +41,43 @@ type ObjectItem = {
     name?: string;
     description?: string;
     image_url?: string;
+    imageUrl?: string;
+    url?: string;
   };
 };
 
+function compareAssetValue(left: WalletPortfolioAssetSummary, right: WalletPortfolioAssetSummary) {
+  const leftValue = Number(left.valueUsd ?? -1);
+  const rightValue = Number(right.valueUsd ?? -1);
+  if (rightValue !== leftValue) {
+    return rightValue - leftValue;
+  }
+
+  const leftAmount = Number(left.amountHuman ?? 0);
+  const rightAmount = Number(right.amountHuman ?? 0);
+  return rightAmount - leftAmount;
+}
+
+function getObjectImageUrl(item: ObjectItem) {
+  const display = item.display as Record<string, unknown> | undefined;
+  const imageUrl =
+    item.display?.image_url ??
+    item.display?.imageUrl ??
+    item.display?.url ??
+    (display ? String(display.image_url ?? display.imageUrl ?? display.url ?? '') : '');
+  return imageUrl.trim() || null;
+}
+
 export default function AssetsPage() {
-  const session = loadWalletSessionFromStorage();
-  const walletAddress = session?.address ?? null;
-  const networkName = 'testnet';
+  const currentAccount = useCurrentAccount();
+  const walletAddress = currentAccount?.address ?? loadWalletSessionFromStorage()?.address ?? null;
+  const networkName = (process.env.NEXT_PUBLIC_SUI_NETWORK as string) || 'mainnet';
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<WalletPortfolioSummary | null>(null);
   const [objects, setObjects] = useState<ObjectItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-
   useEffect(() => {
     async function load() {
       if (!walletAddress) {
@@ -87,9 +111,15 @@ export default function AssetsPage() {
 
   const filteredHoldings = useMemo(() => {
     if (!portfolio?.holdings) return [];
-    return portfolio.holdings.filter(h => 
-      (h.symbol || h.name || '').toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    return portfolio.holdings
+      .filter(h => {
+      // Hide spam/dust tokens: must have a positive human-readable balance
+      const hasBalance = h.amountHuman !== null && h.amountHuman !== undefined && (h.amountHuman as number) > 0;
+      const matchesSearch = (h.symbol || h.name || '').toLowerCase().includes(searchQuery.toLowerCase());
+      return hasBalance && matchesSearch;
+      })
+      .sort(compareAssetValue)
+      .slice(0, 20);
   }, [portfolio, searchQuery]);
 
   return (
@@ -103,9 +133,9 @@ export default function AssetsPage() {
           <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
             <div className="search-wrapper" style={{ position: 'relative' }}>
               <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-              <input 
-                type="text" 
-                placeholder="Search assets..." 
+              <input
+                type="text"
+                placeholder="Search assets..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="clay-input"
@@ -156,7 +186,7 @@ export default function AssetsPage() {
               </h3>
               {loading ? (
                 <div className="skeleton-list">
-                  {[1, 2, 3, 4].map(i => <div key={i} className="skeleton-item" />)}
+                  {[...Array(20)].map((_, i) => <div key={i} className="skeleton-item" />)}
                 </div>
               ) : filteredHoldings.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)' }}>
@@ -164,10 +194,19 @@ export default function AssetsPage() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {filteredHoldings.map((item, index) => (
-                    <div key={`${item.coinType}-${index}`} className="balance-row">
+                  {filteredHoldings.map((item, index) => {
+                    const explorerUrl = `https://suiscan.xyz/${networkName}/coin/${item.coinType}`;
+                    return (
+                    <a
+                      key={`${item.coinType}-${index}`}
+                      href={explorerUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="balance-row"
+                      style={{ textDecoration: 'none', color: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                    >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div className="coin-icon" style={{ 
+                        <div className="coin-icon" style={{
                           width: '38px', height: '38px', fontSize: '1rem',
                           background: item.isNative ? 'linear-gradient(135deg, #6FBEE5, #3898EC)' : undefined
                         }}>
@@ -180,16 +219,20 @@ export default function AssetsPage() {
                           </div>
                         </div>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                          {formatTokenAmount(item.amountHuman, item.decimals ?? 0)}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                            {formatTokenAmount(item.amountHuman, item.decimals ?? 0, item.symbol)}
+                          </div>
+                          <div style={{ color: 'var(--matcha-accent)', fontSize: '0.8rem', fontWeight: 700 }}>
+                            {formatUsd(item.valueUsd)}
+                          </div>
                         </div>
-                        <div style={{ color: 'var(--matcha-accent)', fontSize: '0.8rem', fontWeight: 700 }}>
-                          {formatUsd(item.valueUsd)}
-                        </div>
+                        <ArrowUpRight size={14} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
                       </div>
-                    </div>
-                  ))}
+                    </a>
+                    );
+                  })}
                 </div>
               )}
             </ClayCard>
@@ -216,37 +259,56 @@ export default function AssetsPage() {
               </ClayCard>
             ) : (
               <div className="objects-grid">
-                {filteredObjects.map((item, index) => (
-                  <div key={`${item.objectId ?? 'object'}-${index}`} className="object-card-wrapper">
-                    <ClayCard padding="none" className="object-card">
-                      <div className="object-media">
-                        {item.display?.image_url ? (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img src={item.display.image_url} alt={item.display.name} />
-                        ) : (
-                          <div className="object-placeholder">
-                            <Box size={32} />
+                {filteredObjects.map((item, index) => {
+                  const imageUrl = getObjectImageUrl(item);
+                  const objectName = item.display?.name || item.type?.split('::').pop() || 'Untitled Object';
+                  const objectExplorerUrl = item.objectId
+                    ? `https://suiscan.xyz/${networkName}/object/${item.objectId}`
+                    : null;
+                  return (
+                    <div key={`${item.objectId ?? 'object'}-${index}`} className="object-card-wrapper">
+                      <ClayCard padding="none" className="object-card">
+                        <div className="object-media">
+                          {imageUrl ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={imageUrl} alt={item.display?.name ?? item.type ?? 'NFT'} />
+                          ) : (
+                            <div className="object-placeholder">
+                              <Box size={32} />
+                            </div>
+                          )}
+                          <div className="object-badge">{item.type?.split('::').pop()}</div>
+                        </div>
+                        <div className="object-content" style={{ padding: '16px' }}>
+                          <h4 style={{ fontSize: '1rem', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {objectName}
+                          </h4>
+                          <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                            {item.objectId?.slice(0, 10)}...{item.objectId?.slice(-6)}
                           </div>
-                        )}
-                        <div className="object-badge">{item.type?.split('::').pop()}</div>
-                      </div>
-                      <div className="object-content" style={{ padding: '16px' }}>
-                        <h4 style={{ fontSize: '1rem', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.display?.name || item.type?.split('::').pop() || 'Untitled Object'}
-                        </h4>
-                        <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                          {item.objectId?.slice(0, 10)}...{item.objectId?.slice(-6)}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="version-pill">v{item.latestVersion || '1'}</span>
+                            {objectExplorerUrl ? (
+                              <a
+                                href={objectExplorerUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="view-btn"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <ArrowUpRight size={14} />
+                              </a>
+                            ) : (
+                              <span className="view-btn"><ArrowUpRight size={14} /></span>
+                            )}
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span className="version-pill">v{item.latestVersion || '1'}</span>
-                          <button className="view-btn"><ArrowUpRight size={14} /></button>
-                        </div>
-                      </div>
-                    </ClayCard>
-                  </div>
-                ))}
+                      </ClayCard>
+                    </div>
+                  );
+                })}
               </div>
-            )}
+            )} 
           </div>
         </section>
       </div>

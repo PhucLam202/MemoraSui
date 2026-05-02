@@ -18,7 +18,11 @@ function normalizeIntent(value: unknown): WalletQuestionIntent {
     value === 'object' ||
     value === 'protocol_usage' ||
     value === 'research' ||
-    value === 'staking'
+    value === 'staking' ||
+    value === 'swap' ||
+    value === 'rebalance' ||
+    value === 'deepbook_order' ||
+    value === 'deepbook_market'
   ) {
     return value;
   }
@@ -68,7 +72,7 @@ export class RouteToolsChain {
           content: [
             'You route wallet questions into a single intent for an analytics harness.',
             'Return JSON only with this shape:',
-            '{"intent":"wallet_summary|portfolio|fee|activity|object|protocol_usage|research|staking|unknown","toolNames":["..."],"rationale":"short"}',
+            '{"intent":"wallet_summary|portfolio|fee|activity|object|protocol_usage|research|staking|swap|rebalance|deepbook_order|deepbook_market|unknown","toolNames":["..."],"rationale":"short"}',
             'Use only these tools:',
             this.toolRegistry.describeTools(),
           ].join('\n'),

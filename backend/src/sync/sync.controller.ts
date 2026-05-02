@@ -19,9 +19,10 @@ export class SyncController {
   triggerWalletSyncByAddress(
     @Param('walletAddress') walletAddress: string,
     @Query('network') network?: string,
+    @Query('force') force?: string,
     @Headers('x-user-id') requestedBy?: string,
   ) {
-    return this.syncService.createWalletSyncByAddress(walletAddress, requestedBy, parseNetwork(network));
+    return this.syncService.createWalletSyncByAddress(walletAddress, requestedBy, parseNetwork(network), parseBoolean(force));
   }
 
   @Post('jobs/:jobId/run')
@@ -53,4 +54,12 @@ function parseNetwork(value: string | undefined): SuiNetwork | undefined {
   }
 
   return undefined;
+}
+
+function parseBoolean(value: string | undefined) {
+  if (!value) {
+    return false;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }

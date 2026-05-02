@@ -6,6 +6,7 @@ import { SuiClientService } from './sui-client.service';
 import { SuiRpcCacheService } from './sui-rpc-cache.service';
 import { SuiSyncPlannerService } from './sui-sync-planner.service';
 import { TokenPriceService } from '../pricing/token-price.service';
+import { SUI_COIN_TYPE, isCanonicalSuiCoinType } from '../ai/tools/defi-utils';
 import type {
   SuiCacheKeyParts,
   SuiCoinSnapshot,
@@ -88,6 +89,7 @@ function formatAmountFromRaw(balanceRaw: string, decimals: number | null): { amo
 @Injectable()
 export class SuiIngestionService {
   private readonly logger = new Logger(SuiIngestionService.name);
+  private readonly ongoingSync = new Map<string, Promise<SuiWalletSyncSnapshot>>();
 
   constructor(
     private readonly suiClientService: SuiClientService,
@@ -99,6 +101,21 @@ export class SuiIngestionService {
   ) {}
 
   async syncWallet(walletAddress: string, network: SuiNetwork, options: FetchOptions = {}): Promise<SuiWalletSyncSnapshot> {
+    const dedupKey = `${network}:${walletAddress}`;
+    const existing = this.ongoingSync.get(dedupKey);
+    if (existing) {
+      this.logger.verbose(`Reusing in-progress sync for wallet=${walletAddress} network=${network}.`);
+      return existing;
+    }
+
+    const promise = this.doSyncWallet(walletAddress, network, options).finally(() => {
+      this.ongoingSync.delete(dedupKey);
+    });
+    this.ongoingSync.set(dedupKey, promise);
+    return promise;
+  }
+
+  private async doSyncWallet(walletAddress: string, network: SuiNetwork, options: FetchOptions = {}): Promise<SuiWalletSyncSnapshot> {
     const window = options.window ?? this.syncPlannerService.createIncrementalPlan({
       startCursor: options.cursor ?? null,
       limit: options.limit ?? backendEnv.sui.pageSize,
@@ -248,7 +265,7 @@ export class SuiIngestionService {
       windowEnd: options.window?.endTime ?? null,
     };
 
-    const [allBalances, transactions] = await Promise.all([
+    const [allBalances, transactions, nativeBalance] = await Promise.all([
       this.suiRpcCacheService.remember(
         'coin-balances',
         cacheKeyParts,
@@ -264,12 +281,29 @@ export class SuiIngestionService {
         relation: 'all',
         window: options.window,
       }),
+      this.suiRpcCacheService.remember(
+        'coin-balance-native',
+        { chain: network, walletAddress, cursor: null, windowStart: null, windowEnd: null },
+        async () => this.suiClientService.getBalance(walletAddress, SUI_COIN_TYPE, network),
+        {
+          ttlSeconds: backendEnv.sui.cache.balanceTtlSeconds,
+          staleWhileRevalidateSeconds: backendEnv.sui.cache.staleSeconds,
+        },
+      ),
     ]);
 
     const coinChanges = aggregateCoinChanges(transactions.data, walletAddress);
     const balances = extractArrayPayload(allBalances.data);
+    const nativeBalancePayload = toRecord(nativeBalance.data);
+    const mergedBalances = [...balances];
+    if (Object.keys(nativeBalancePayload).length > 0) {
+      const nativeCoinType = String(nativeBalancePayload.coinType ?? nativeBalancePayload.type ?? SUI_COIN_TYPE);
+      if (!mergedBalances.some((balance) => String(balance.coinType ?? balance.type ?? '') === nativeCoinType)) {
+        mergedBalances.push(nativeBalancePayload);
+      }
+    }
     const metadataByCoinType = await Promise.all(
-      balances.map(async (balance) => {
+      mergedBalances.map(async (balance) => {
         const coinType = String(balance.coinType ?? balance.type ?? 'unknown');
         try {
           const metadata = await this.suiRpcCacheService.remember(
@@ -289,9 +323,13 @@ export class SuiIngestionService {
     );
     const metadataMap = new Map(metadataByCoinType);
 
-    return Promise.all(balances.map(async (balance) => {
+    const snapshots = await Promise.all(mergedBalances.map(async (balance) => {
       const coinType = String(balance.coinType ?? balance.type ?? 'unknown');
       const metadata = metadataMap.get(coinType) ?? fallbackCoinMetadata(coinType);
+      if (!isCanonicalSuiCoinType(coinType) && metadata.symbol.toUpperCase() === 'SUI') {
+        this.logger.warn(`Skipping non-canonical SUI-like coinType=${coinType} wallet=${walletAddress} network=${network}`);
+        return null;
+      }
       const balanceRaw = String(balance.totalBalance ?? balance.balance ?? '0');
       const { amountHuman, balanceFormatted } = formatAmountFromRaw(balanceRaw, metadata.decimals);
       const existingValueUsd =
@@ -324,6 +362,8 @@ export class SuiIngestionService {
         raw: balance,
       };
     }));
+
+    return snapshots.filter((snapshot) => snapshot !== null) as SuiCoinSnapshot[];
   }
 
   async fetchObjectSnapshots(
@@ -463,6 +503,7 @@ export class SuiIngestionService {
       const ownerType = resolveObjectOwnerType(raw);
       const latestVersion = String(object.version ?? raw.version ?? '');
       const state = resolveObjectState(raw);
+      const display = extractObjectDisplay(raw, object);
       return {
         objectId,
         owner: owner || undefined,
@@ -472,6 +513,7 @@ export class SuiIngestionService {
         version: latestVersion,
         state,
         stateSnapshot: state,
+        display,
         raw,
       };
     });
@@ -585,7 +627,7 @@ export class SuiIngestionService {
       await Promise.all(
         snapshot.objects.map((objectPosition) =>
           objectPositionModel.updateOne(
-            { walletAddress, objectId: objectPosition.objectId },
+            { objectId: objectPosition.objectId },
             {
               $set: {
                 walletAddress,
@@ -639,15 +681,20 @@ function toNumber(value: unknown) {
   return undefined;
 }
 
-function normalizeStatus(value: unknown) {
+function normalizeStatus(value: unknown): 'success' | 'failure' | 'unknown' {
   if (typeof value === 'string') {
-    const normalized = value.toLowerCase();
-    if (normalized.includes('success')) {
-      return 'success';
-    }
-    if (normalized.includes('fail')) {
-      return 'failure';
-    }
+    const n = value.toLowerCase();
+    if (n.includes('success')) return 'success';
+    if (n.includes('fail')) return 'failure';
+  }
+
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    // Sui RPC nested format: { status: "success" }
+    if (typeof obj.status === 'string') return normalizeStatus(obj.status);
+    // Object key format: { Success: null } or { Failure: { error: '...' } }
+    if ('Success' in obj) return 'success';
+    if ('Failure' in obj) return 'failure';
   }
 
   return 'unknown';
@@ -763,6 +810,41 @@ function resolveObjectState(raw: Record<string, any>) {
   }
 
   return 'unknown';
+}
+
+function extractObjectDisplay(...sources: Array<Record<string, unknown> | null | undefined>) {
+  for (const source of sources) {
+    if (!source) {
+      continue;
+    }
+
+    const candidates = [
+      source.display,
+      source.displayData,
+      source.display_data,
+      source.objectDisplay,
+      source.object_display,
+    ];
+    for (const candidate of candidates) {
+      const wrapped = toRecord(candidate);
+      const output = toRecord(wrapped.output);
+      if (Object.keys(output).length > 0) {
+        return output;
+      }
+
+      const data = toRecord(wrapped.data);
+      if (Object.keys(data).length > 0) {
+        return data;
+      }
+
+      const record = toRecord(candidate);
+      if (Object.keys(record).length > 0) {
+        return record;
+      }
+    }
+  }
+
+  return null;
 }
 
 function aggregateCoinChanges(transactions: SuiTransactionSummary[], walletAddress: string) {

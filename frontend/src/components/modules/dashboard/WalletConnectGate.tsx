@@ -1,8 +1,12 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useCurrentAccount, useCurrentWallet, useDAppKit, useWalletConnection, useWallets } from '@mysten/dapp-kit-react';
-import { ClayButton } from '@/components/shared/ClayButton';
+import { useCurrentAccount, useCurrentWallet, useWalletConnection } from '@mysten/dapp-kit-react';
+import dynamic from 'next/dynamic';
+const ConnectButton = dynamic(
+  () => import('@mysten/dapp-kit-react/ui').then((m) => ({ default: m.ConnectButton })),
+  { ssr: false },
+);
 import { ClayCard } from '@/components/shared/ClayCard';
 import {
   isWalletSessionValid,
@@ -16,16 +20,8 @@ interface WalletConnectGateProps {
 }
 
 function ConnectWalletModal({
-  error,
-  isConnecting,
-  onConnect,
-  walletCount,
   mounted,
 }: {
-  error: string | null;
-  isConnecting: boolean;
-  onConnect: () => void;
-  walletCount: number;
   mounted: boolean;
 }) {
   return (
@@ -70,54 +66,27 @@ function ConnectWalletModal({
               Connect your Sui wallet
             </h2>
             <p style={{ margin: '10px 0 0', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              Dashboard access is locked until a verified wallet session exists in localStorage and
-              matches the current authenticated wallet flow.
+              Choose your wallet below to access the dashboard.
             </p>
           </div>
 
-          <div
-            style={{
-              padding: '14px 16px',
-              borderRadius: '20px',
-              backgroundColor: 'var(--matcha-highlight)',
-              color: 'var(--matcha-accent)',
-              fontSize: '0.95rem',
-              lineHeight: 1.5,
-            }}
-          >
-            {!mounted
-              ? 'Checking for Sui wallet extension...'
-              : walletCount > 0
-              ? 'A compatible Sui wallet extension was detected. Connect it to continue.'
-              : 'No Sui wallet extension is detected in this browser. Install one, then refresh.'}
-          </div>
-
-          {error ? (
+          {!mounted ? (
             <div
-              role="alert"
               style={{
-                padding: '12px 14px',
-                borderRadius: '16px',
-                backgroundColor: '#FDE8E4',
-                color: '#8C2F1F',
+                padding: '14px 16px',
+                borderRadius: '20px',
+                backgroundColor: 'var(--matcha-highlight)',
+                color: 'var(--matcha-accent)',
                 fontSize: '0.95rem',
-                lineHeight: 1.5,
               }}
             >
-              {error}
+              Checking for Sui wallet extensions…
             </div>
-          ) : null}
-
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <ClayButton
-              variant="primary"
-              size="md"
-              onClick={onConnect}
-              disabled={!mounted || isConnecting || walletCount === 0}
-            >
-              {isConnecting ? 'Connecting...' : 'Connect Sui Wallet'}
-            </ClayButton>
-          </div>
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+              <ConnectButton />
+            </div>
+          )}
         </div>
       </ClayCard>
     </div>
@@ -126,15 +95,11 @@ function ConnectWalletModal({
 
 export function WalletConnectGate({ children }: WalletConnectGateProps) {
   const [walletState, setWalletState] = useState<WalletSessionState>({ status: 'loading' });
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  const dAppKit = useDAppKit();
   const account = useCurrentAccount();
   const currentWallet = useCurrentWallet();
   const walletConnection = useWalletConnection();
-  const wallets = useWallets();
 
   useEffect(() => {
     setMounted(true);
@@ -161,6 +126,12 @@ export function WalletConnectGate({ children }: WalletConnectGateProps) {
           status: 'missing',
           reason: sessionStatus === 'verified' ? 'expired-session' : 'invalid-session',
         });
+        return;
+      }
+
+      // Require wallet to actually be connected — a stale localStorage session alone is not enough.
+      if (!hasConnectedWallet) {
+        setWalletState({ status: 'missing', reason: 'no-session' });
         return;
       }
 
@@ -206,36 +177,6 @@ export function WalletConnectGate({ children }: WalletConnectGateProps) {
     [shouldBlockDashboard],
   );
 
-  async function handleConnectWallet() {
-    setError(null);
-
-    if (wallets.length === 0) {
-      setError('No Sui wallet extension is available in this browser.');
-      return;
-    }
-
-    setIsConnecting(true);
-    try {
-      const firstWallet = wallets[0];
-      if (!firstWallet) {
-        setError('No Sui wallet extension is available in this browser.');
-        return;
-      }
-
-      if (wallets.length === 1) {
-        await dAppKit.connectWallet({ wallet: firstWallet });
-        return;
-      }
-
-      const preferredWallet = wallets.find((wallet) => wallet.accounts.length > 0) ?? firstWallet;
-      await dAppKit.connectWallet({ wallet: preferredWallet });
-    } catch (connectError) {
-      setError(connectError instanceof Error ? connectError.message : 'Failed to connect Sui wallet.');
-    } finally {
-      setIsConnecting(false);
-    }
-  }
-
   return (
     <>
       <div aria-hidden={shouldBlockDashboard} style={blockedContentStyle}>
@@ -243,15 +184,7 @@ export function WalletConnectGate({ children }: WalletConnectGateProps) {
       </div>
 
       {shouldBlockDashboard ? (
-        <ConnectWalletModal
-          error={error}
-          isConnecting={isConnecting}
-          onConnect={() => {
-            void handleConnectWallet();
-          }}
-          walletCount={wallets.length}
-          mounted={mounted}
-        />
+        <ConnectWalletModal mounted={mounted} />
       ) : null}
     </>
   );

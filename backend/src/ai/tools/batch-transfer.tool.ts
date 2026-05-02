@@ -66,7 +66,7 @@ export class BatchTransferTool {
     const recipientsData = parseMultipleRecipients(question);
 
     if (!recipientsData || recipientsData.length === 0) {
-      this.logger.warn(`Could not parse batch transfer params from: "${question}"`);
+      this.logger.warn(`Could not parse batch transfer params (chars=${question.length}).`);
       return null;
     }
 

@@ -18,7 +18,7 @@ import {
 } from '@/lib/wallet-session';
 
 const challengeEncoder = new TextEncoder();
-const TESTNET_NETWORK: SuiNetwork = 'testnet';
+const APP_NETWORK = (process.env.NEXT_PUBLIC_SUI_NETWORK as SuiNetwork | undefined) ?? 'mainnet';
 
 interface UseWalletAuthOptions {
   appName: string;
@@ -135,7 +135,7 @@ export function useWalletAuth({ appName, apiBaseUrl }: UseWalletAuthOptions) {
     setSyncStatus(null);
 
     try {
-      const network = TESTNET_NETWORK;
+      const network = APP_NETWORK;
       let challengeStr = `Local auth for ${account.address}`;
       let backendStatus: 'pending' | 'offline' = 'offline';
       
@@ -231,6 +231,7 @@ export function useWalletAuth({ appName, apiBaseUrl }: UseWalletAuthOptions) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Authentication failed');
       setSession(curr => curr ? { ...curr, status: 'error' as WalletAuthStatus } : null);
+      autoAuthAttemptRef.current = null;
     } finally {
       setIsBusy(false);
     }
@@ -252,11 +253,11 @@ export function useWalletAuth({ appName, apiBaseUrl }: UseWalletAuthOptions) {
   useEffect(() => {
     if (!isHydrated || isBusy || !account || !currentWallet) return;
 
-    const attemptKey = `${TESTNET_NETWORK}:${account.address}`;
+    const attemptKey = `${APP_NETWORK}:${account.address}`;
     const hasMatchingVerifiedSession =
       session?.status === 'verified' &&
       session.address === account.address &&
-      session.network === TESTNET_NETWORK &&
+      session.network === APP_NETWORK &&
       isWalletSessionValid(session);
 
     if (hasMatchingVerifiedSession) {

@@ -25,7 +25,7 @@ export class SyncService {
     private readonly walletService: WalletService,
   ) {}
 
-  async createWalletSync(walletId: string, requestedBy?: string): Promise<{
+  async createWalletSync(walletId: string, requestedBy?: string, force = false): Promise<{
     job: Record<string, unknown> | null;
     queued: boolean;
     status: SyncJobStatus;
@@ -42,7 +42,7 @@ export class SyncService {
           userId: requestedBy?.trim() || undefined,
           isPrimary: Boolean(requestedBy?.trim()),
         });
-        return this.createWalletSync(createdWallet.id, requestedBy);
+        return this.createWalletSync(createdWallet.id, requestedBy, force);
       }
       throw new NotFoundException('Wallet not found.');
     }
@@ -61,13 +61,22 @@ export class SyncService {
     }
 
     const existingJob = await this.findActiveJobByWalletId(wallet.id);
-    if (existingJob) {
+    if (existingJob && !force) {
       return {
         job: existingJob,
         queued: existingJob.status === 'queued',
         status: existingJob.status as SyncJobStatus,
         reused: true,
       };
+    }
+
+    if (force) {
+      await this.purgeWalletData(wallet.id);
+      await this.updateWallet(wallet.id, {
+        lastSyncedAt: null,
+        syncCursor: null,
+      });
+      await this.analyticsService.refreshWalletSnapshot(wallet.address, wallet.network);
     }
 
     const job = await this.upsertSyncJob({
@@ -107,6 +116,7 @@ export class SyncService {
     walletAddress: string,
     requestedBy?: string,
     network?: SuiNetwork,
+    force = false,
   ): Promise<{
     job: Record<string, unknown> | null;
     queued: boolean;
@@ -119,7 +129,7 @@ export class SyncService {
       throw new NotFoundException('Wallet not found.');
     }
 
-    return this.createWalletSync(wallet.id, requestedBy);
+    return this.createWalletSync(wallet.id, requestedBy, force);
   }
 
   async getJobStatus(jobId: string) {
@@ -403,6 +413,32 @@ export class SyncService {
     }
 
     await model.findByIdAndUpdate(walletId, { $set: patch }, { new: true });
+  }
+
+  private async purgeWalletData(walletId: string) {
+    const wallet = await this.findWallet(walletId);
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found.');
+    }
+
+    const models = [
+      'CoinBalance',
+      'ObjectPosition',
+      'RawTransactionBlock',
+      'NormalizedEvent',
+      'WalletSnapshot',
+    ] as const;
+
+    await Promise.all(
+      models.map(async (name) => {
+        const model = this.databaseService.getModel<Record<string, unknown>>(name);
+        if (!model) {
+          return;
+        }
+
+        await model.deleteMany({ walletAddress: wallet.address, network: wallet.network });
+      }),
+    );
   }
 
   private mapWallet(document: Record<string, unknown>) {

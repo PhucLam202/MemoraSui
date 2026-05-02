@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useCurrentAccount } from '@mysten/dapp-kit-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { FilterBar } from '@/components/modules/activity/FilterBar';
 import { ActivityList } from '@/components/modules/activity/ActivityList';
@@ -43,13 +44,14 @@ export default function ActivityPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dateRange, setDateRange] = useState('Last 30 Days');
+  const [dateRange, setDateRange] = useState('All Time');
   const [protocol, setProtocol] = useState('All Protocols');
   const [searchQuery, setSearchQuery] = useState('');
   const [items, setItems] = useState<ActivityData[]>([]);
 
-  const walletAddress = loadWalletSessionFromStorage()?.address ?? null;
-  const networkName = 'testnet';
+  const currentAccount = useCurrentAccount();
+  const walletAddress = currentAccount?.address ?? loadWalletSessionFromStorage()?.address ?? null;
+  const networkName = (process.env.NEXT_PUBLIC_SUI_NETWORK as string) || 'mainnet';
 
   useEffect(() => {
     async function load() {

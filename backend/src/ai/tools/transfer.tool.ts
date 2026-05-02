@@ -25,7 +25,7 @@ export class TransferTool {
     const recipient = parseRecipient(question);
 
     if (!amountMist || !recipient) {
-      this.logger.warn(`Could not parse transfer params from: "${question}"`);
+      this.logger.warn(`Could not parse transfer params (chars=${question.length}).`);
       return null;
     }
 

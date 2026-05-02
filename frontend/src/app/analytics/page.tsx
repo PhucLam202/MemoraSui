@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useCurrentAccount } from '@mysten/dapp-kit-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ClayCard } from '@/components/shared/ClayCard';
 import { fetchApi, formatSui } from '@/lib/api-client';
@@ -105,9 +106,9 @@ const AreaChart = ({ data, color, label }: { data: { x: string, y: number }[], c
 };
 
 export default function AnalyticsPage() {
-  const session = loadWalletSessionFromStorage();
-  const walletAddress = session?.address ?? null;
-  const networkName = 'testnet';
+  const currentAccount = useCurrentAccount();
+  const walletAddress = currentAccount?.address ?? loadWalletSessionFromStorage()?.address ?? null;
+  const networkName = (process.env.NEXT_PUBLIC_SUI_NETWORK as string) || 'mainnet';
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

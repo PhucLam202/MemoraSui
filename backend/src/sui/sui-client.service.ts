@@ -91,6 +91,19 @@ export class SuiClientService {
         owner,
         cursor: cursor ?? undefined,
         limit,
+        coinType: undefined,
+      } as never),
+    );
+  }
+
+  async getCoinsByType(owner: string, coinType: string, cursor?: string | null, limit?: number, network: SuiNetwork = backendEnv.network) {
+    const client = this.getClient(network);
+    return this.execute('getCoins', () =>
+      client.getCoins({
+        owner,
+        coinType,
+        cursor: cursor ?? undefined,
+        limit,
       } as never),
     );
   }
@@ -102,6 +115,31 @@ export class SuiClientService {
         owner,
         cursor: cursor ?? undefined,
         limit,
+        options: {
+          showType: true,
+          showContent: true,
+          showOwner: true,
+          showDisplay: true,
+        },
+      } as never),
+    );
+  }
+
+  async getOwnedObjectsByType(owner: string, structType: string, cursor?: string | null, limit?: number, network: SuiNetwork = backendEnv.network) {
+    const client = this.getClient(network);
+    return this.execute('getOwnedObjects', () =>
+      client.getOwnedObjects({
+        owner,
+        cursor: cursor ?? undefined,
+        limit,
+        filter: {
+          StructType: structType,
+        },
+        options: {
+          showType: true,
+          showContent: true,
+          showOwner: true,
+        },
       } as never),
     );
   }
@@ -111,6 +149,26 @@ export class SuiClientService {
     return this.execute('getObject', () =>
       client.getObject({
         id: objectId,
+        options: {
+          showType: true,
+          showContent: true,
+          showOwner: true,
+          showDisplay: true,
+        },
+      } as never),
+    );
+  }
+
+  async multiGetObjects(objectIds: string[], network: SuiNetwork = backendEnv.network) {
+    const client = this.getClient(network);
+    return this.execute('multiGetObjects', () =>
+      client.multiGetObjects({
+        ids: objectIds,
+        options: {
+          showType: true,
+          showContent: true,
+          showOwner: true,
+        },
       } as never),
     );
   }
@@ -139,6 +197,30 @@ export class SuiClientService {
   async call<T = unknown>(method: string, params: unknown[], network: SuiNetwork = backendEnv.network) {
     const client = this.getClient(network);
     return this.execute(method, () => client.call(method, params)) as Promise<T>;
+  }
+
+  async getReferenceGasPrice(network: SuiNetwork = backendEnv.network) {
+    const client = this.getClient(network);
+    return this.execute('getReferenceGasPrice', () => client.getReferenceGasPrice());
+  }
+
+  async dryRunTransactionBlock(transactionBlock: Uint8Array | string, network: SuiNetwork = backendEnv.network) {
+    const client = this.getClient(network);
+    return this.execute('dryRunTransactionBlock', () =>
+      client.dryRunTransactionBlock({
+        transactionBlock,
+      } as never),
+    );
+  }
+
+  async devInspectTransactionBlock(transactionBlock: unknown, sender: string, network: SuiNetwork = backendEnv.network) {
+    const client = this.getClient(network);
+    return this.execute('devInspectTransactionBlock', () =>
+      client.devInspectTransactionBlock({
+        transactionBlock,
+        sender,
+      } as never),
+    );
   }
 
   private async execute<T>(label: string, task: RpcTask<T>): Promise<T> {

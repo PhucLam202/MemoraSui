@@ -83,6 +83,7 @@ export interface SuiObjectSnapshot {
   version?: string;
   state: 'owned' | 'wrapped' | 'transferred' | 'mutated' | 'unknown';
   stateSnapshot?: string | null;
+  display?: Record<string, unknown> | null;
   raw: Record<string, unknown>;
 }
 

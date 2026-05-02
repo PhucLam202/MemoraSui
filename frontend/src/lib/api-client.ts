@@ -96,13 +96,13 @@ export function formatUsd(value: number | null | undefined) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(value);
 }
 
-export function formatTokenAmount(amount: number | string | null | undefined, decimals: number = 9, symbol: string = 'SUI') {
+export function formatTokenAmount(amount: number | string | null | undefined, decimals: number = 9, symbol: string = '') {
   void decimals;
-  if (amount === null || amount === undefined) return `0 ${symbol}`;
+  if (amount === null || amount === undefined) return symbol ? `0 ${symbol}` : '0';
   const numeric = typeof amount === 'number' ? amount : Number(amount);
-  if (Number.isNaN(numeric)) return `${amount} ${symbol}`;
-  
-  return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${symbol}`;
+  if (Number.isNaN(numeric)) return symbol ? `${amount} ${symbol}` : String(amount);
+  const formatted = numeric.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  return symbol ? `${formatted} ${symbol}` : formatted;
 }
 
 export function formatSui(value: string | number | null | undefined, isRaw: boolean = true) {

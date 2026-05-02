@@ -18,6 +18,16 @@ import { TransferTool } from '../tools/transfer.tool';
 import { BatchTransferTool } from '../tools/batch-transfer.tool';
 import { TransferNFTTool } from '../tools/transfer-nft.tool';
 import { loadAgentsConfig } from '../config';
+import { SwapIntentTool } from '../tools/swap-intent.tool';
+import { RebalanceIntentTool } from '../tools/rebalance-intent.tool';
+import { DeepBookOrderIntentTool } from '../tools/deepbook-order-intent.tool';
+import { SwapExecutionTool } from '../tools/swap-execution.tool';
+import { RebalanceExecutionTool } from '../tools/rebalance-execution.tool';
+import { DeepBookExecutionTool } from '../tools/deepbook-execution.tool';
+import { DEFAULT_KEEP_GAS_MIST, DEFAULT_SLIPPAGE, MAINNET_ONLY_MESSAGE } from '../tools/defi-utils';
+import { NluIntentExtractorChain, type NluSwapResult, type NluTransferResult, type NluBatchTransferResult, type NluNftTransferResult, type NluRebalanceResult, type NluDeepBookResult } from '../chains/nlu-intent-extractor.chain';
+import { DefiExecutionRateLimitService } from '../tools/defi-execution-rate-limit.service';
+import { DefiExecutionAuditService } from '../tools/defi-execution-audit.service';
 
 function buildAnswerContextDiagnostics(answerContext?: Record<string, unknown>) {
   if (!answerContext) {
@@ -59,99 +69,175 @@ export class ChatOrchestratorService {
     private readonly transferTool: TransferTool,
     private readonly batchTransferTool: BatchTransferTool,
     private readonly transferNFTTool: TransferNFTTool,
+    private readonly swapIntentTool: SwapIntentTool,
+    private readonly rebalanceIntentTool: RebalanceIntentTool,
+    private readonly deepBookOrderIntentTool: DeepBookOrderIntentTool,
+    private readonly swapExecutionTool: SwapExecutionTool,
+    private readonly rebalanceExecutionTool: RebalanceExecutionTool,
+    private readonly deepBookExecutionTool: DeepBookExecutionTool,
+    private readonly nluExtractor: NluIntentExtractorChain,
+    private readonly defiExecutionRateLimitService: DefiExecutionRateLimitService,
+    private readonly defiExecutionAuditService: DefiExecutionAuditService,
   ) {}
 
   async answer(input: AiHarnessInput, options?: { emit?: AiStreamEmitter }): Promise<AiHarnessOutput> {
     const wallet = await this.walletService.resolveWallet(input.walletId);
 
-    // Check for NFT transfer first (more specific)
-    const nftTransferIntent = this.detectNFTTransferIntent(input.question);
-    if (nftTransferIntent) {
-      const nftRequest = this.transferNFTTool.parseNFTTransfer(input.question, wallet.network);
-      if (nftRequest) {
+    // LLM-based NLU: single call extracts intent + params in any language
+    const nlu = await this.nluExtractor.extract(input.question);
+    if (nlu !== null) {
+      switch (nlu.intent) {
+        case 'transfer_nft':
+          return this.handleNftTransfer(nlu, wallet.network);
+        case 'batch_transfer':
+          return this.handleBatchTransfer(nlu, wallet.network);
+        case 'rebalance':
+          return this.handleRebalance(nlu, wallet.address, wallet.network);
+        case 'deepbook_order':
+        case 'deepbook_market':
+          return this.handleDeepBookOrder(nlu, wallet.address, wallet.network);
+        case 'swap':
+          return this.handleSwap(nlu, wallet.address, wallet.network, input.question);
+        case 'transfer':
+          return this.handleTransfer(nlu, wallet.network);
+        case 'none':
+          break; // fall through to LangGraph
+      }
+    } else {
+      // Fallback: NLU unavailable — use original regex-based cascade
+      const nftTransferIntent = this.detectNFTTransferIntent(input.question);
+      if (nftTransferIntent) {
+        const nftRequest = this.transferNFTTool.parseNFTTransfer(input.question, wallet.network);
+        if (nftRequest) {
+          return {
+            intent: 'transfer_nft',
+            answer: `Xác nhận chuyển NFT/Object \`${nftRequest.objectId}\` đến \`${nftRequest.recipient}\`. Vui lòng xác nhận giao dịch trong ví của bạn.`,
+            toolCalls: [],
+            memoryReads: [],
+            memoryWrites: [],
+            analyzedFacts: '',
+            routeSource: 'classifier',
+            plannedToolCalls: [],
+            nftTransferRequest: nftRequest,
+          };
+        }
         return {
           intent: 'transfer_nft',
-          answer: `Xác nhận chuyển NFT/Object \`${nftRequest.objectId}\` đến \`${nftRequest.recipient}\`. Vui lòng xác nhận giao dịch trong ví của bạn.`,
+          answer: 'Không thể phân tích lệnh chuyển NFT. Vui lòng nói rõ Object ID và địa chỉ ví nhận (ví dụ: "chuyển NFT 0xABC... cho 0xDEF...").',
           toolCalls: [],
           memoryReads: [],
           memoryWrites: [],
           analyzedFacts: '',
           routeSource: 'classifier',
           plannedToolCalls: [],
-          nftTransferRequest: nftRequest,
         };
       }
-      return {
-        intent: 'transfer_nft',
-        answer: 'Không thể phân tích lệnh chuyển NFT. Vui lòng nói rõ Object ID và địa chỉ ví nhận (ví dụ: "chuyển NFT 0xABC... cho 0xDEF...").',
-        toolCalls: [],
-        memoryReads: [],
-        memoryWrites: [],
-        analyzedFacts: '',
-        routeSource: 'classifier',
-        plannedToolCalls: [],
-      };
-    }
 
-    // Check for batch transfer
-    const batchTransferIntent = this.detectBatchTransferIntent(input.question);
-    if (batchTransferIntent) {
-      const batchRequest = this.batchTransferTool.parseBatchTransfer(input.question, wallet.network);
-      if (batchRequest) {
-        const recipientList = batchRequest.recipients
-          .map((r) => `- ${r.amount} SUI → \`${r.address}\``)
-          .join('\n');
+      const batchTransferIntent = this.detectBatchTransferIntent(input.question);
+      if (batchTransferIntent) {
+        const batchRequest = this.batchTransferTool.parseBatchTransfer(input.question, wallet.network);
+        if (batchRequest) {
+          const recipientList = batchRequest.recipients.map((r) => `- ${r.amount} SUI → \`${r.address}\``).join('\n');
+          return {
+            intent: 'batch_transfer',
+            answer: `Xác nhận chuyển **${batchRequest.totalAmount} SUI** đến ${batchRequest.recipients.length} địa chỉ:\n\n${recipientList}\n\nVui lòng xác nhận giao dịch trong ví của bạn.`,
+            toolCalls: [],
+            memoryReads: [],
+            memoryWrites: [],
+            analyzedFacts: '',
+            routeSource: 'classifier',
+            plannedToolCalls: [],
+            batchTransferRequest: batchRequest,
+          };
+        }
         return {
           intent: 'batch_transfer',
-          answer: `Xác nhận chuyển **${batchRequest.totalAmount} SUI** đến ${batchRequest.recipients.length} địa chỉ:\n\n${recipientList}\n\nVui lòng xác nhận giao dịch trong ví của bạn.`,
+          answer: 'Không thể phân tích lệnh chuyển tiền hàng loạt. Vui lòng nói rõ số lượng SUI và các địa chỉ ví nhận.',
           toolCalls: [],
           memoryReads: [],
           memoryWrites: [],
           analyzedFacts: '',
           routeSource: 'classifier',
           plannedToolCalls: [],
-          batchTransferRequest: batchRequest,
         };
       }
-      return {
-        intent: 'batch_transfer',
-        answer: 'Không thể phân tích lệnh chuyển tiền hàng loạt. Vui lòng nói rõ số lượng SUI và các địa chỉ ví nhận (ví dụ: "chuyển 0.1 SUI cho 0xABC... và 0.2 SUI cho 0xDEF...").',
-        toolCalls: [],
-        memoryReads: [],
-        memoryWrites: [],
-        analyzedFacts: '',
-        routeSource: 'classifier',
-        plannedToolCalls: [],
-      };
-    }
 
-    // Regular single transfer
-    const transferIntent = this.detectTransferIntent(input.question);
-    if (transferIntent) {
-      const txRequest = this.transferTool.parseTransfer(input.question, wallet.network);
-      if (txRequest) {
-        return {
-          intent: 'transfer',
-          answer: `Xác nhận chuyển **${txRequest.amount} SUI** đến \`${txRequest.recipient}\`. Vui lòng xác nhận giao dịch trong ví của bạn.`,
-          toolCalls: [],
-          memoryReads: [],
-          memoryWrites: [],
-          analyzedFacts: '',
-          routeSource: 'classifier',
-          plannedToolCalls: [],
-          transactionRequest: txRequest,
-        };
+      if (this.detectRebalanceIntent(input.question)) {
+        if (wallet.network !== 'mainnet') return this.buildSimpleAnswer('rebalance', MAINNET_ONLY_MESSAGE);
+        const req = this.rebalanceIntentTool.parseRebalance(input.question, wallet.network);
+        if (!req) return this.buildSimpleAnswer('rebalance', 'Không thể phân tích allocation rebalance. Ví dụ: "đưa portfolio về 50% SUI, 30% USDC, 20% DEEP".');
+        const rateLimit = await this.ensureDefiExecutionRateLimit(wallet.address, 'rebalance');
+        if (!rateLimit.allowed) {
+          return this.buildSimpleAnswer(
+            'rebalance',
+            `Bạn đã tạo quote rebalance quá nhanh. Hãy thử lại sau ${new Date(rateLimit.resetAt).toLocaleTimeString()}.`,
+          );
+        }
+        this.defiExecutionAuditService.log({
+          event: 'execution_quote_requested',
+          walletAddress: wallet.address,
+          intent: 'rebalance',
+        });
+        const result = await this.rebalanceExecutionTool.buildRebalanceExecution({
+          walletAddress: wallet.address,
+          network: wallet.network,
+          targets: req.targets,
+          keepGasMist: BigInt(req.keepGasMist),
+        });
+        this.logExecutionAuditResult('rebalance', wallet.address, result.answer, Boolean(result.executionRequest));
+        return { ...this.buildSimpleAnswer('rebalance', result.answer), executionRequest: result.executionRequest };
       }
-      return {
-        intent: 'transfer',
-        answer: 'Không thể phân tích lệnh chuyển tiền. Vui lòng nói rõ số lượng SUI và địa chỉ ví nhận (ví dụ: "chuyển 0.1 SUI cho 0xABC...").',
-        toolCalls: [],
-        memoryReads: [],
-        memoryWrites: [],
-        analyzedFacts: '',
-        routeSource: 'classifier',
-        plannedToolCalls: [],
-      };
+
+      if (this.detectDeepBookOrderIntent(input.question)) {
+        if (wallet.network !== 'mainnet') return this.buildSimpleAnswer('deepbook_order', MAINNET_ONLY_MESSAGE);
+        const req = this.deepBookOrderIntentTool.parseOrder(input.question, wallet.network);
+        if (!req) return this.buildSimpleAnswer('deepbook_order', 'Không thể phân tích lệnh DeepBook. Ví dụ: "đặt limit buy 1000 DEEP giá 0.008 SUI".');
+        const rateLimit = await this.ensureDefiExecutionRateLimit(wallet.address, 'deepbook_order');
+        if (!rateLimit.allowed) {
+          return this.buildSimpleAnswer(
+            'deepbook_order',
+            `Bạn đã tạo quote DeepBook quá nhanh. Hãy thử lại sau ${new Date(rateLimit.resetAt).toLocaleTimeString()}.`,
+          );
+        }
+        this.defiExecutionAuditService.log({
+          event: 'execution_quote_requested',
+          walletAddress: wallet.address,
+          intent: 'deepbook_order',
+        });
+        const result = await this.deepBookExecutionTool.buildOrderExecution({ walletAddress: wallet.address, network: wallet.network, baseToken: req.baseToken, quoteToken: req.quoteToken, side: req.side, orderType: req.orderType, quantity: req.quantity, price: req.price });
+        this.logExecutionAuditResult('deepbook_order', wallet.address, result.answer, Boolean(result.executionRequest));
+        return { ...this.buildSimpleAnswer(req.orderType === 'market' ? 'deepbook_market' : 'deepbook_order', result.answer), executionRequest: result.executionRequest };
+      }
+
+        if (this.detectSwapIntent(input.question)) {
+          if (wallet.network !== 'mainnet') return this.buildSimpleAnswer('swap', MAINNET_ONLY_MESSAGE);
+          const req = this.swapIntentTool.parseSwap(input.question, wallet.network);
+          if (!req) return this.buildSimpleAnswer('swap', 'Không thể phân tích lệnh swap. Ví dụ: "đổi 20 SUI sang USDC, giữ lại 2 SUI làm gas".');
+          const rateLimit = await this.ensureDefiExecutionRateLimit(wallet.address, 'swap');
+          if (!rateLimit.allowed) {
+            return this.buildSimpleAnswer(
+              'swap',
+              `Bạn đã tạo quote swap quá nhanh. Hãy thử lại sau ${new Date(rateLimit.resetAt).toLocaleTimeString()}.`,
+            );
+          }
+          this.defiExecutionAuditService.log({
+            event: 'execution_quote_requested',
+            walletAddress: wallet.address,
+            intent: 'swap',
+          });
+          const result = await this.swapExecutionTool.buildSwapExecution({ walletAddress: wallet.address, network: wallet.network, legs: req.legs, fromToken: req.fromToken, toToken: req.toToken, amount: req.amount, slippage: req.slippage, keepGasMist: BigInt(req.keepGasMist) });
+          this.logExecutionAuditResult('swap', wallet.address, result.answer, Boolean(result.executionRequest));
+          return { ...this.buildSimpleAnswer('swap', result.answer), executionRequest: result.executionRequest };
+        }
+
+      const transferIntent = this.detectTransferIntent(input.question);
+      if (transferIntent) {
+        const txRequest = this.transferTool.parseTransfer(input.question, wallet.network);
+        if (txRequest) {
+          return { intent: 'transfer', answer: `Xác nhận chuyển **${txRequest.amount} SUI** đến \`${txRequest.recipient}\`. Vui lòng xác nhận giao dịch trong ví của bạn.`, toolCalls: [], memoryReads: [], memoryWrites: [], analyzedFacts: '', routeSource: 'classifier', plannedToolCalls: [], transactionRequest: txRequest };
+        }
+        return { intent: 'transfer', answer: 'Không thể phân tích lệnh chuyển tiền. Vui lòng nói rõ số lượng SUI và địa chỉ ví nhận.', toolCalls: [], memoryReads: [], memoryWrites: [], analyzedFacts: '', routeSource: 'classifier', plannedToolCalls: [] };
+      }
     }
 
     try {
@@ -303,5 +389,221 @@ export class ChatOrchestratorService {
 
   private detectTransferIntent(question: string): boolean {
     return /(chuyển|chuyen|transfer|send|gửi|gui)\s.*(sui|token|coin|\d)|(send|transfer)\s.*\bto\b|0x[0-9a-f]{40,}/i.test(question);
+  }
+
+  private detectSwapIntent(question: string): boolean {
+    return (
+      /(swap|đổi|doi|hoán đổi|hoan doi).*(sang|qua|to|for|->|→|mua|buy)/i.test(question) ||
+      /\d+(?:[.,]\d+)?\s+(mua|buy)\s+((?:token\s+)?[a-z][a-z0-9:_-]*(?:\s+token)?)/i.test(question)
+    );
+  }
+
+  private detectRebalanceIntent(question: string): boolean {
+    return /(rebalance|cân bằng|can bang|đưa portfolio về|dua portfolio ve|allocation)/i.test(question);
+  }
+
+  private detectDeepBookOrderIntent(question: string): boolean {
+    return /(deepbook|limit order|market order|đặt lệnh|dat lenh).*(buy|sell|mua|ban|order|lệnh|lenh)/i.test(question);
+  }
+
+  private buildSimpleAnswer(intent: AiHarnessOutput['intent'], answer: string): AiHarnessOutput {
+    return {
+      intent,
+      answer,
+      toolCalls: [],
+      memoryReads: [],
+      memoryWrites: [],
+      analyzedFacts: '',
+      routeSource: 'classifier',
+      plannedToolCalls: [],
+    };
+  }
+
+  // ─── NLU-based handlers ────────────────────────────────────────────────────
+
+  private handleNftTransfer(nlu: NluNftTransferResult, network: string): AiHarnessOutput {
+    return {
+      intent: 'transfer_nft',
+      answer: `Xác nhận chuyển NFT/Object \`${nlu.objectId}\` đến \`${nlu.recipient}\`. Vui lòng xác nhận giao dịch trong ví của bạn.`,
+      toolCalls: [],
+      memoryReads: [],
+      memoryWrites: [],
+      analyzedFacts: '',
+      routeSource: 'classifier',
+      plannedToolCalls: [],
+      nftTransferRequest: { objectId: nlu.objectId, recipient: nlu.recipient, network },
+    };
+  }
+
+  private handleBatchTransfer(nlu: NluBatchTransferResult, network: string): AiHarnessOutput {
+    const MIST_PER_SUI = 1_000_000_000;
+    const recipients = nlu.recipients.map((r) => ({
+      address: r.address,
+      amount: r.amount,
+      amountMist: BigInt(Math.round(r.amount * MIST_PER_SUI)).toString(),
+    }));
+    const totalAmount = recipients.reduce((sum, r) => sum + r.amount, 0);
+    const totalAmountMist = BigInt(Math.round(totalAmount * MIST_PER_SUI)).toString();
+    const batchRequest = { recipients, network, totalAmount, totalAmountMist };
+    const recipientList = recipients.map((r) => `- ${r.amount} SUI → \`${r.address}\``).join('\n');
+    return {
+      intent: 'batch_transfer',
+      answer: `Xác nhận chuyển **${totalAmount} SUI** đến ${recipients.length} địa chỉ:\n\n${recipientList}\n\nVui lòng xác nhận giao dịch trong ví của bạn.`,
+      toolCalls: [],
+      memoryReads: [],
+      memoryWrites: [],
+      analyzedFacts: '',
+      routeSource: 'classifier',
+      plannedToolCalls: [],
+      batchTransferRequest: batchRequest,
+    };
+  }
+
+  private async handleRebalance(nlu: NluRebalanceResult, walletAddress: string, network: string): Promise<AiHarnessOutput> {
+    if (network !== 'mainnet') return this.buildSimpleAnswer('rebalance', MAINNET_ONLY_MESSAGE);
+    const rateLimit = await this.ensureDefiExecutionRateLimit(walletAddress, 'rebalance');
+    if (!rateLimit.allowed) {
+      return this.buildSimpleAnswer(
+        'rebalance',
+        `Bạn đã tạo quote rebalance quá nhanh. Hãy thử lại sau ${new Date(rateLimit.resetAt).toLocaleTimeString()}.`,
+      );
+    }
+    this.defiExecutionAuditService.log({
+      event: 'execution_quote_requested',
+      walletAddress,
+      intent: 'rebalance',
+    });
+    const result = await this.rebalanceExecutionTool.buildRebalanceExecution({
+      walletAddress,
+      network,
+      targets: nlu.targets,
+      sellTokens: nlu.sellTokens,
+      keepGasMist: BigInt(nlu.keepGasMist ?? DEFAULT_KEEP_GAS_MIST),
+    });
+    this.logExecutionAuditResult('rebalance', walletAddress, result.answer, Boolean(result.executionRequest));
+    return { ...this.buildSimpleAnswer('rebalance', result.answer), executionRequest: result.executionRequest };
+  }
+
+  private async handleDeepBookOrder(nlu: NluDeepBookResult, walletAddress: string, network: string): Promise<AiHarnessOutput> {
+    if (network !== 'mainnet') return this.buildSimpleAnswer('deepbook_order', MAINNET_ONLY_MESSAGE);
+    const rateLimit = await this.ensureDefiExecutionRateLimit(walletAddress, 'deepbook_order');
+    if (!rateLimit.allowed) {
+      return this.buildSimpleAnswer(
+        'deepbook_order',
+        `Bạn đã tạo quote DeepBook quá nhanh. Hãy thử lại sau ${new Date(rateLimit.resetAt).toLocaleTimeString()}.`,
+      );
+    }
+    this.defiExecutionAuditService.log({
+      event: 'execution_quote_requested',
+      walletAddress,
+      intent: 'deepbook_order',
+    });
+    const result = await this.deepBookExecutionTool.buildOrderExecution({
+      walletAddress,
+      network,
+      baseToken: nlu.baseToken,
+      quoteToken: nlu.quoteToken,
+      side: nlu.side,
+      orderType: nlu.orderType,
+      quantity: nlu.quantity,
+      price: nlu.price,
+    });
+    this.logExecutionAuditResult('deepbook_order', walletAddress, result.answer, Boolean(result.executionRequest));
+    return { ...this.buildSimpleAnswer(nlu.intent, result.answer), executionRequest: result.executionRequest };
+  }
+
+  private async handleSwap(
+    nlu: NluSwapResult,
+    walletAddress: string,
+    network: string,
+    originalQuestion: string,
+  ): Promise<AiHarnessOutput> {
+    if (network !== 'mainnet') return this.buildSimpleAnswer('swap', MAINNET_ONLY_MESSAGE);
+    const rateLimit = await this.ensureDefiExecutionRateLimit(walletAddress, 'swap');
+    if (!rateLimit.allowed) {
+      return this.buildSimpleAnswer(
+        'swap',
+        `Bạn đã tạo quote swap quá nhanh. Hãy thử lại sau ${new Date(rateLimit.resetAt).toLocaleTimeString()}.`,
+      );
+    }
+    this.defiExecutionAuditService.log({
+      event: 'execution_quote_requested',
+      walletAddress,
+      intent: 'swap',
+    });
+    const hasMultiLegHint =
+      /(?:,|;|&|\+|\band\b|\bva\b|và)\s*(?:swap|đổi|doi|hoán đổi|hoan doi|\d+(?:[.,]\d+))/iu.test(
+        originalQuestion,
+      );
+    const parsedRequest = hasMultiLegHint ? this.swapIntentTool.parseSwap(originalQuestion, network) : null;
+    const parsedMultiLegs =
+      parsedRequest && Array.isArray(parsedRequest.legs) && parsedRequest.legs.length > 1 ? parsedRequest.legs : undefined;
+    const result = await this.swapExecutionTool.buildSwapExecution({
+      walletAddress,
+      network,
+      legs: parsedMultiLegs,
+      fromToken: nlu.fromToken,
+      toToken: nlu.toToken,
+      amount: nlu.amount,
+      slippage: nlu.slippage ?? DEFAULT_SLIPPAGE,
+      keepGasMist: BigInt(nlu.keepGasMist ?? DEFAULT_KEEP_GAS_MIST),
+    });
+    this.logExecutionAuditResult('swap', walletAddress, result.answer, Boolean(result.executionRequest));
+    return { ...this.buildSimpleAnswer('swap', result.answer), executionRequest: result.executionRequest };
+  }
+
+  private handleTransfer(nlu: NluTransferResult, network: string): AiHarnessOutput {
+    const MIST_PER_SUI = 1_000_000_000;
+    const amountMist = BigInt(Math.round(nlu.amount * MIST_PER_SUI)).toString();
+    return {
+      intent: 'transfer',
+      answer: `Xác nhận chuyển **${nlu.amount} ${nlu.token}** đến \`${nlu.recipient}\`. Vui lòng xác nhận giao dịch trong ví của bạn.`,
+      toolCalls: [],
+      memoryReads: [],
+      memoryWrites: [],
+      analyzedFacts: '',
+      routeSource: 'classifier',
+      plannedToolCalls: [],
+      transactionRequest: { amount: nlu.amount, amountMist, recipient: nlu.recipient, network },
+    };
+  }
+
+  private async ensureDefiExecutionRateLimit(
+    walletAddress: string,
+    intent: 'swap' | 'rebalance' | 'deepbook_order',
+  ) {
+    const result = await this.defiExecutionRateLimitService.consume({ walletAddress, intent });
+    if (!result.allowed) {
+      this.defiExecutionAuditService.log({
+        event: 'execution_quote_rejected',
+        walletAddress,
+        intent,
+        rejectCode: 'RATE_LIMITED',
+        reason: `rate-limit hit (${result.count}/${result.limit})`,
+      });
+    }
+    return result;
+  }
+
+  private logExecutionAuditResult(
+    intent: 'swap' | 'rebalance' | 'deepbook_order',
+    walletAddress: string,
+    answer: string,
+    hasExecutionRequest: boolean,
+  ) {
+    if (hasExecutionRequest) {
+      this.defiExecutionAuditService.log({
+        event: 'execution_quote_built',
+        walletAddress,
+        intent,
+      });
+      return;
+    }
+    this.defiExecutionAuditService.log({
+      event: 'execution_quote_rejected',
+      walletAddress,
+      intent,
+      reason: answer.slice(0, 140),
+    });
   }
 }

@@ -12,6 +12,10 @@ export type WalletQuestionIntent =
   | 'transfer'
   | 'batch_transfer'
   | 'transfer_nft'
+  | 'swap'
+  | 'rebalance'
+  | 'deepbook_order'
+  | 'deepbook_market'
   | 'unknown';
 
 @Injectable()
@@ -22,6 +26,18 @@ export class ClassifyQuestionChain {
     // Check for NFT transfer first (more specific)
     if (/(transfer|send|gửi|gui|chuyển|chuyen)\s.*(nft|object|collectible)|(nft|object|collectible)\s.*(transfer|send|gửi|gui|chuyển|chuyen)/i.test(normalized)) {
       return 'transfer_nft';
+    }
+
+    if (/(rebalance|cân bằng|can bang|đưa portfolio về|dua portfolio ve|allocation)/i.test(normalized)) {
+      return 'rebalance';
+    }
+
+    if (/(deepbook|limit order|market order|đặt lệnh|dat lenh)/i.test(normalized) && /(buy|sell|mua|ban|order|lệnh|lenh)/i.test(normalized)) {
+      return /market/i.test(normalized) ? 'deepbook_market' : 'deepbook_order';
+    }
+
+    if (/(swap|đổi|doi|hoán đổi|hoan doi)/i.test(normalized) && /(sang|qua|to|for|->|→)/i.test(normalized)) {
+      return 'swap';
     }
 
     // Check for batch/multi transfer
@@ -69,6 +85,9 @@ export class ClassifyQuestionChain {
     }
     if (/(protocol|dex|cetus|bluefin|interaction|tương tác giao thức|giao thức)/.test(normalized)) {
       return 'protocol_usage';
+    }
+    if (/(swap|slippage|route|routing|liquidity|orderbook|deepbook)/.test(normalized)) {
+      return 'swap';
     }
     if (/(portfolio|balance|balances|asset|assets|holding|holdings|token|tokens|coin|coins|holdings count|wallet value|danh mục|số dư|tài sản|số tiền|so tien|bao nhiêu token|bao nhieu token)/.test(normalized)) {
       return 'portfolio';

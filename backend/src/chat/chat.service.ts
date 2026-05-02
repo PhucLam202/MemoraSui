@@ -173,6 +173,9 @@ export class ChatService {
       intent: answer.intent,
       analyzedFacts: answer.analyzedFacts,
       transactionRequest: answer.transactionRequest,
+      batchTransferRequest: answer.batchTransferRequest,
+      nftTransferRequest: answer.nftTransferRequest,
+      executionRequest: answer.executionRequest,
     };
   }
 

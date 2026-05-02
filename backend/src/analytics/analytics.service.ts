@@ -15,6 +15,8 @@ import type { SuiNetwork } from '../sui/sui.types';
 import { SuiIngestionService } from '../sui/sui-ingestion.service';
 import { SuiNormalizationService } from '../sui/sui-normalization.service';
 import { TokenPriceService } from '../pricing/token-price.service';
+import { SUI_COIN_TYPE } from '../ai/tools/defi-utils';
+import { isCanonicalSuiCoinType } from '../ai/tools/defi-utils';
 
 @Injectable()
 export class AnalyticsService {
@@ -37,7 +39,7 @@ export class AnalyticsService {
     const existing = await snapshotModel.findOne({ snapshotKey, network }).lean<Record<string, unknown> | null>();
     if (existing) {
       const mapped = this.mapSnapshot(existing);
-      if (!this.hasUsableSnapshotSource(mapped.source) && network === 'testnet') {
+      if (!this.hasUsableSnapshotSource(mapped.source)) {
         this.logger.warn(`Refreshing empty cached snapshot for wallet=${walletAddress} network=${network}.`);
         return this.refreshWalletSnapshot(walletAddress, network, range);
       }
@@ -120,7 +122,7 @@ export class AnalyticsService {
       this.findTransactions(walletAddress, network, range),
     ]);
 
-    if (balances.length === 0 && objects.length === 0 && events.length === 0 && transactions.length === 0 && network === 'testnet') {
+    if (balances.length === 0 && objects.length === 0 && events.length === 0 && transactions.length === 0) {
       this.logger.warn(`Analytics source empty for wallet=${walletAddress} network=${network}; syncing directly from RPC.`);
       try {
         const snapshot = await this.suiIngestionService.syncWallet(walletAddress, network, {
@@ -150,7 +152,16 @@ export class AnalyticsService {
           network,
         );
 
-    return this.buildAnalyticsSnapshot(walletAddress, network, balances, objects, normalizedEvents, transactions);
+    const hasNativeSui = balances.some((balance) => {
+      const coinType = String(balance.coinType ?? 'unknown');
+      return coinType === SUI_COIN_TYPE;
+    });
+
+    const mergedBalances = hasNativeSui
+      ? balances
+      : await this.mergeNativeSuiBalance(walletAddress, network, balances);
+
+    return this.buildAnalyticsSnapshot(walletAddress, network, mergedBalances, objects, normalizedEvents, transactions);
   }
 
   private async buildAnalyticsSnapshot(
@@ -194,13 +205,16 @@ export class AnalyticsService {
           return balance;
         }
 
-        const symbol = coinTypeToSymbol(String(balance.coinType ?? 'unknown')).toUpperCase();
-        if (symbol !== 'SUI' && symbol !== 'WAL') {
+        const coinType = String(balance.coinType ?? 'unknown');
+        const symbol = coinTypeToSymbol(coinType).toUpperCase();
+        const amountHuman = numberOrNull(balance.amountHuman);
+
+        // Skip price lookup for zero-balance tokens — they're likely spam/airdrop dust.
+        if (amountHuman === null || amountHuman <= 0) {
           return balance;
         }
 
-        const amountHuman = numberOrNull(balance.amountHuman);
-        const price = await this.tokenPriceService.getTokenPrice(symbol, amountHuman);
+        const price = await this.tokenPriceService.getTokenPrice(symbol, amountHuman, coinType);
         return {
           ...balance,
           valueUsd: price.valueUsd,
@@ -284,6 +298,28 @@ export class AnalyticsService {
     return this.databaseService.getModel<T>(name);
   }
 
+  private async mergeNativeSuiBalance(
+    walletAddress: string,
+    network: SuiNetwork,
+    balances: Record<string, unknown>[],
+  ) {
+    try {
+      const snapshots = await this.suiIngestionService.fetchCoinSnapshots(walletAddress, network);
+      const nativeBalance = snapshots.find((snapshot) => snapshot.coinType === SUI_COIN_TYPE);
+      if (!nativeBalance) {
+        return balances;
+      }
+
+      const merged = balances.filter((balance) => String(balance.coinType ?? 'unknown') !== SUI_COIN_TYPE);
+      merged.push(nativeBalance as unknown as Record<string, unknown>);
+      return merged;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Failed to merge native SUI balance for wallet=${walletAddress} network=${network}: ${detail}`);
+      return balances;
+    }
+  }
+
   private buildSnapshotKey(walletAddress: string, network: SuiNetwork, range: WalletAnalyticsRange) {
     const start = range.startMs === null ? 'all' : String(range.startMs);
     const end = range.endMs === null ? 'all' : String(range.endMs);
@@ -310,8 +346,12 @@ function buildPortfolioSummary(
   balances: Record<string, unknown>[],
   objects: Record<string, unknown>[],
 ): WalletPortfolioSummary {
+  const sanitizedBalances = balances.filter((balance) => {
+    const coinType = String(balance.coinType ?? 'unknown');
+    return isCanonicalSuiCoinType(coinType) || coinTypeToSymbol(coinType) !== 'SUI';
+  });
   const balanceMap = new Map<string, Record<string, unknown>>();
-  for (const balance of balances) {
+  for (const balance of sanitizedBalances) {
     const coinType = String(balance.coinType ?? 'unknown');
     const existing = balanceMap.get(coinType);
     if (!existing) {
@@ -369,7 +409,8 @@ function buildPortfolioSummary(
       sharePct: share !== null ? share * 100 : null,
     };
   });
-  const topAssets = [...holdings]
+  const topAssets = holdings
+    .filter((h) => h.amountHuman !== null && (h.amountHuman ?? 0) > 0)
     .sort((left, right) => compareNumbers(right.valueUsd, left.valueUsd) || compareBigInts(right.balance, left.balance))
     .slice(0, 10);
   const coinDistribution = holdings.map((balance) => ({ ...balance }));

@@ -10,7 +10,7 @@ export type NFTTransferRequest = {
 function parseObjectId(text: string): string | null {
   // Match object ID pattern (starts with 0x followed by hex)
   const match = text.match(/(?:object[:\s]+)?(0x[0-9a-fA-F]{40,64})/i);
-  return match ? match[1] : null;
+  return match?.[1] ?? null;
 }
 
 function parseRecipient(text: string): string | null {
@@ -32,13 +32,13 @@ function parseRecipient(text: string): string | null {
   }
 
   // Otherwise return the last address found
-  return addresses[addresses.length - 1];
+  return addresses[addresses.length - 1] ?? null;
 }
 
 function parseObjectType(text: string): string | null {
   // Try to extract object type if mentioned
   const typeMatch = text.match(/type[:\s]+([A-Za-z0-9_:<>]+)/i);
-  return typeMatch ? typeMatch[1] : null;
+  return typeMatch?.[1] ?? null;
 }
 
 @Injectable()
@@ -51,7 +51,7 @@ export class TransferNFTTool {
     const objectType = parseObjectType(question);
 
     if (!objectId || !recipient) {
-      this.logger.warn(`Could not parse NFT transfer params from: "${question}"`);
+      this.logger.warn(`Could not parse NFT transfer params (chars=${question.length}).`);
       return null;
     }
 

@@ -10,6 +10,7 @@ import { LangGraphOrchestratorService } from './ai/graph/langgraph-orchestrator.
 import { LangGraphSupervisor } from './ai/graph/supervisor';
 import { LangGraphWorkflow } from './ai/graph/workflow';
 import { RouteToolsChain } from './ai/chains/route-tools.chain';
+import { NluIntentExtractorChain } from './ai/chains/nlu-intent-extractor.chain';
 import { WalletAgent } from './ai/agents/wallet-agent';
 import { OpenAiClient } from './ai/llm/openai.client';
 import { MemWalService } from './ai/memory/memwal.service';
@@ -27,6 +28,17 @@ import { LangGraphToolRegistry } from './ai/tools/langgraph-tool-registry';
 import { TransferTool } from './ai/tools/transfer.tool';
 import { BatchTransferTool } from './ai/tools/batch-transfer.tool';
 import { TransferNFTTool } from './ai/tools/transfer-nft.tool';
+import { SwapIntentTool } from './ai/tools/swap-intent.tool';
+import { RebalanceIntentTool } from './ai/tools/rebalance-intent.tool';
+import { DeepBookOrderIntentTool } from './ai/tools/deepbook-order-intent.tool';
+import { DefiTokenResolverTool } from './ai/tools/defi-token-resolver.tool';
+import { DefiWalletAccessTool } from './ai/tools/defi-wallet-access.tool';
+import { TransactionRiskTool } from './ai/tools/transaction-risk.tool';
+import { SwapExecutionTool } from './ai/tools/swap-execution.tool';
+import { RebalanceExecutionTool } from './ai/tools/rebalance-execution.tool';
+import { DeepBookExecutionTool } from './ai/tools/deepbook-execution.tool';
+import { DefiExecutionRateLimitService } from './ai/tools/defi-execution-rate-limit.service';
+import { DefiExecutionAuditService } from './ai/tools/defi-execution-audit.service';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { AnalyticsController } from './analytics/analytics.controller';
@@ -75,6 +87,7 @@ import { MetricsService } from './observability/metrics.service';
     SuiNormalizationService,
     MemWalService,
     ClassifyQuestionChain,
+    NluIntentExtractorChain,
     OpenAiClient,
     AiToolRegistry,
     RouteToolsChain,
@@ -101,6 +114,17 @@ import { MetricsService } from './observability/metrics.service';
     TransferTool,
     BatchTransferTool,
     TransferNFTTool,
+    SwapIntentTool,
+    RebalanceIntentTool,
+    DeepBookOrderIntentTool,
+    DefiTokenResolverTool,
+    DefiWalletAccessTool,
+    TransactionRiskTool,
+    DefiExecutionRateLimitService,
+    DefiExecutionAuditService,
+    SwapExecutionTool,
+    RebalanceExecutionTool,
+    DeepBookExecutionTool,
   ],
 })
 export class AppModule {}

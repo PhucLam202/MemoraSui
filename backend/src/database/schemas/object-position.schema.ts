@@ -59,6 +59,10 @@ export const ObjectPositionSchema = new Schema(
       required: false,
       index: true,
     },
+    display: {
+      type: Schema.Types.Mixed,
+      required: false,
+    },
     raw: {
       type: Schema.Types.Mixed,
       required: true,

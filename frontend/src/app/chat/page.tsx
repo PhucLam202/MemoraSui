@@ -2,15 +2,16 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MessageSquarePlus, Activity, ChevronDown, ChevronRight, Loader2, SendHorizonal, X } from 'lucide-react';
-import { useDAppKit } from '@mysten/dapp-kit-react';
+import { useDAppKit, useCurrentAccount, useCurrentNetwork } from '@mysten/dapp-kit-react';
+import type { ClientWithCoreApi } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ClayCard } from '@/components/shared/ClayCard';
-import { ClayInput } from '@/components/shared/ClayInput';
 import { ClayButton } from '@/components/shared/ClayButton';
 import { ChatBubble } from '@/components/modules/chat/ChatBubble';
 import { fetchApi, postApiStream } from '@/lib/api-client';
 import { loadWalletSessionFromStorage, type WalletSession } from '@/lib/wallet-session';
+import { parseExecutionRequestPayload, type ExecutionRequest } from './execution-request.schema';
 
 type TransactionRequest = {
   amount: number;
@@ -37,6 +38,21 @@ type NFTTransferRequest = {
   recipient: string;
   network: string;
   objectType?: string;
+};
+
+type SuiCoinObject = {
+  objectId: string;
+  version: string;
+  digest: string;
+  balance: string;
+};
+
+type SuiCoinListClient = ClientWithCoreApi & {
+  listCoins: (params: { owner: string; coinType?: string; cursor?: string; limit?: number }) => Promise<{
+    objects?: SuiCoinObject[];
+    hasNextPage?: boolean;
+    cursor?: string | null;
+  }>;
 };
 
 type UiMessage = {
@@ -87,6 +103,10 @@ type SendMessageResponse = {
     }>;
   };
   session: { id: string };
+  transactionRequest?: TransactionRequest;
+  batchTransferRequest?: BatchTransferRequest;
+  nftTransferRequest?: NFTTransferRequest;
+  executionRequest?: ExecutionRequest;
 };
 
 type ChatFlowStep = {
@@ -132,6 +152,13 @@ type ChatStreamEvent =
 
 const INTRO_MESSAGE = 'Hello! Ask about portfolio, activity, gas fee, protocols, or objects.';
 const CHAT_STORAGE_PREFIX = 'sui-portfolio:chat-active-session:';
+const SUI_COIN_TYPE = '0x2::sui::SUI';
+const QUOTE_EXPIRY_SAFETY_MS = 3_000;
+const GAS_COIN_SEPARATION_ERROR_MESSAGE =
+  'Ví hiện không có gas coin tách biệt với coin đang dùng trong swap. Hãy split SUI thành tối thiểu 2 coin rồi yêu cầu quote mới.';
+const GAS_COIN_AUTO_SPLIT_MIST = 50_000_000n;
+const GAS_COIN_SPLIT_BUFFER_MIST = 5_000_000n;
+const SPLIT_TX_GAS_RESERVE_MIST = 5_000_000n;
 
 function formatDisplayTime(value?: string | Date) {
   const date = value instanceof Date ? value : value ? new Date(value) : new Date();
@@ -148,6 +175,288 @@ function formatSessionTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function parseQuoteExpiryMs(expiresAt: string) {
+  const value = new Date(expiresAt).getTime();
+  return Number.isFinite(value) ? value : 0;
+}
+
+function normalizeExecutionError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (isGasCoinSeparationError(error)) {
+    return message;
+  }
+  if (isInsufficientGasForBudgetError(error)) {
+    return message;
+  }
+  if (/No valid gas coins|gas coin|gas budget|InsufficientGas/i.test(message)) {
+    return 'Không tìm thấy SUI gas coin hợp lệ. Hãy kiểm tra ví đang ở đúng network mainnet, sau đó nạp thêm SUI hoặc merge/unlock coin rồi yêu cầu agent tạo quote mới.';
+  }
+  if (/expired|Quote đã hết hạn/i.test(message)) {
+    return 'Quote đã hết hạn. Hãy yêu cầu agent tạo quote mới.';
+  }
+  if (/Slippage .*vượt ngưỡng an toàn/i.test(message)) {
+    return message;
+  }
+  if (/Price impact .*vượt ngưỡng/i.test(message)) {
+    return message;
+  }
+  if (/Yêu cầu xác nhận nâng cao/i.test(message)) {
+    return message;
+  }
+  return message;
+}
+
+function buildExecutionTransaction(input: {
+  request: ExecutionRequest;
+  senderAddress: string;
+}) {
+  const executionTx = Transaction.fromKind(input.request.transactionKindBytesBase64);
+  executionTx.setSenderIfNotSet(input.senderAddress);
+  return executionTx;
+}
+
+function isGasCoinSeparationError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /Ví hiện không có gas coin tách biệt|split SUI thành tối thiểu 2 coin/i.test(message);
+}
+
+function isInsufficientGasForBudgetError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /Gas coin tách biệt hiện có tối đa/i.test(message);
+}
+
+function parseMistAmount(value?: string) {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) {
+    return null;
+  }
+  const parsed = BigInt(trimmed);
+  return parsed > 0n ? parsed : null;
+}
+
+function formatMistToSui(mist: bigint) {
+  const whole = mist / 1_000_000_000n;
+  const fraction = mist % 1_000_000_000n;
+  if (fraction === 0n) {
+    return `${whole.toString()} SUI`;
+  }
+  const fractionText = fraction.toString().padStart(9, '0').replace(/0+$/, '');
+  return `${whole.toString()}.${fractionText} SUI`;
+}
+
+async function listOwnedSuiCoins(input: { senderAddress: string; client: SuiCoinListClient }) {
+  const allCoins: SuiCoinObject[] = [];
+  let cursor: string | undefined;
+  for (let pageIndex = 0; pageIndex < 4; pageIndex += 1) {
+    const page = await input.client.listCoins({
+      owner: input.senderAddress,
+      coinType: SUI_COIN_TYPE,
+      cursor,
+      limit: 50,
+    });
+    const coins = Array.isArray(page.objects) ? page.objects : [];
+    allCoins.push(...coins);
+    if (!page.hasNextPage || !page.cursor) {
+      break;
+    }
+    cursor = page.cursor;
+  }
+  return allCoins;
+}
+
+function selectCandidateGasPayments(input: {
+  allCoins: SuiCoinObject[];
+  blockedObjectIds: Set<string>;
+  minBalanceMist?: bigint;
+}) {
+  return input.allCoins
+    .filter((coin) => {
+      if (input.blockedObjectIds.has(coin.objectId.toLowerCase())) {
+        return false;
+      }
+      const balance = BigInt(coin.balance);
+      if (balance <= 0n) {
+        return false;
+      }
+      if (input.minBalanceMist && balance < input.minBalanceMist) {
+        return false;
+      }
+      return true;
+    })
+    .sort((left, right) => (BigInt(left.balance) > BigInt(right.balance) ? -1 : 1))
+    .slice(0, 24)
+    .map((coin) => ({
+      objectId: coin.objectId,
+      version: coin.version,
+      digest: coin.digest,
+    }));
+}
+
+async function autoSplitSuiForGasCoin(input: {
+  tx: Transaction;
+  senderAddress: string;
+  client: SuiCoinListClient;
+  requiredGasBudgetMist?: bigint | null;
+  executeTransaction: (params: { transaction: Transaction }) => Promise<{
+    $kind: 'Transaction' | 'FailedTransaction';
+    Transaction?: { digest?: string };
+    FailedTransaction?: { digest?: string; status?: { error?: { message?: string } | string | null } };
+  }>;
+}) {
+  const ownedInputObjectIds = collectOwnedInputObjectIds(input.tx);
+  const allCoins = await listOwnedSuiCoins({
+    senderAddress: input.senderAddress,
+    client: input.client,
+  });
+  const candidateGasPayments = selectCandidateGasPayments({
+    allCoins,
+    blockedObjectIds: ownedInputObjectIds,
+    minBalanceMist: input.requiredGasBudgetMist ?? undefined,
+  });
+  if (candidateGasPayments.length > 0) {
+    return false;
+  }
+
+  const requiredGasCoinMist = input.requiredGasBudgetMist
+    ? input.requiredGasBudgetMist + GAS_COIN_SPLIT_BUFFER_MIST
+    : GAS_COIN_AUTO_SPLIT_MIST;
+  const splitAmountMist = requiredGasCoinMist > GAS_COIN_AUTO_SPLIT_MIST ? requiredGasCoinMist : GAS_COIN_AUTO_SPLIT_MIST;
+  const minimumSplitSourceBalanceMist = splitAmountMist + SPLIT_TX_GAS_RESERVE_MIST;
+
+  const coinToSplit = allCoins
+    .filter(
+      (coin) =>
+        ownedInputObjectIds.has(coin.objectId.toLowerCase()) &&
+        BigInt(coin.balance) > minimumSplitSourceBalanceMist,
+    )
+    .sort((left, right) => (BigInt(left.balance) > BigInt(right.balance) ? -1 : 1))[0];
+
+  if (!coinToSplit) {
+    throw new Error(GAS_COIN_SEPARATION_ERROR_MESSAGE);
+  }
+
+  const splitTx = new Transaction();
+  splitTx.setSender(input.senderAddress);
+  splitTx.setGasPayment([
+    {
+      objectId: coinToSplit.objectId,
+      version: coinToSplit.version,
+      digest: coinToSplit.digest,
+    },
+  ]);
+  const [separatedGasCoin] = splitTx.splitCoins(splitTx.gas, [splitAmountMist]);
+  splitTx.transferObjects([separatedGasCoin], input.senderAddress);
+
+  const splitResult = await input.executeTransaction({ transaction: splitTx });
+  if (splitResult.$kind === 'FailedTransaction') {
+    const statusError = splitResult.FailedTransaction?.status?.error;
+    const message =
+      typeof statusError === 'string'
+        ? statusError
+        : statusError?.message ?? 'Không thể tách gas coin tự động. Hãy split SUI thủ công rồi yêu cầu quote mới.';
+    throw new Error(message);
+  }
+
+  return true;
+}
+
+function collectOwnedInputObjectIds(tx: Transaction) {
+  const data = tx.getData() as {
+    inputs?: Array<{
+      Object?: {
+        ImmOrOwnedObject?: {
+          objectId?: string;
+        };
+      };
+    }>;
+  };
+  const ownedInputObjectIds = new Set<string>();
+  for (const input of data.inputs ?? []) {
+    const objectId = input?.Object?.ImmOrOwnedObject?.objectId;
+    if (typeof objectId === 'string' && objectId) {
+      ownedInputObjectIds.add(objectId.toLowerCase());
+    }
+  }
+  return ownedInputObjectIds;
+}
+
+function transactionUsesGasCoin(tx: Transaction) {
+  const data = tx.getData() as unknown;
+  const stack: unknown[] = [data];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current || typeof current !== 'object') {
+      continue;
+    }
+    if ((current as { $kind?: string }).$kind === 'GasCoin') {
+      return true;
+    }
+    for (const value of Object.values(current as Record<string, unknown>)) {
+      if (Array.isArray(value)) {
+        stack.push(...value);
+      } else {
+        stack.push(value);
+      }
+    }
+  }
+  return false;
+}
+
+async function materializeExecutionTransactionJson(input: {
+  tx: Transaction;
+  senderAddress: string;
+  gasBudgetMist?: string;
+  client: SuiCoinListClient;
+}) {
+  input.tx.setGasOwner(input.senderAddress);
+  const requiredGasBudgetMist = parseMistAmount(input.gasBudgetMist);
+  if (requiredGasBudgetMist) {
+    input.tx.setGasBudgetIfNotSet(requiredGasBudgetMist.toString());
+  }
+
+  const ownedInputObjectIds = collectOwnedInputObjectIds(input.tx);
+  const allCoins = await listOwnedSuiCoins({
+    senderAddress: input.senderAddress,
+    client: input.client,
+  });
+
+  const candidateGasCoins = selectCandidateGasPayments({
+    allCoins,
+    blockedObjectIds: ownedInputObjectIds,
+    minBalanceMist: requiredGasBudgetMist ?? undefined,
+  });
+
+  if (candidateGasCoins.length === 0) {
+    if (requiredGasBudgetMist) {
+      const fallbackCandidates = selectCandidateGasPayments({
+        allCoins,
+        blockedObjectIds: ownedInputObjectIds,
+      });
+      if (fallbackCandidates.length > 0) {
+        const largestCandidateCoin = allCoins
+          .filter((coin) => !ownedInputObjectIds.has(coin.objectId.toLowerCase()) && BigInt(coin.balance) > 0n)
+          .sort((left, right) => (BigInt(left.balance) > BigInt(right.balance) ? -1 : 1))[0];
+        const maxBalanceMist = BigInt(largestCandidateCoin?.balance ?? '0');
+        if (maxBalanceMist > 0n) {
+          throw new Error(
+            `Gas coin tách biệt hiện có tối đa ${formatMistToSui(maxBalanceMist)}, thấp hơn gas budget quote ${formatMistToSui(requiredGasBudgetMist)}. Hãy yêu cầu quote mới (slippage/route khác) hoặc nạp thêm SUI.`,
+          );
+        }
+      }
+    }
+    if (transactionUsesGasCoin(input.tx)) {
+      return await input.tx.toJSON({ client: input.client });
+    }
+    throw new Error(GAS_COIN_SEPARATION_ERROR_MESSAGE);
+  }
+
+  input.tx.setGasPayment(candidateGasCoins);
+  return await input.tx.toJSON({ client: input.client });
 }
 
 function buildStorageKey(walletId: string) {
@@ -244,13 +553,16 @@ function mapMessageToUi(message: ChatMessageItem): UiMessage {
 
 export default function ChatPage() {
   const dAppKit = useDAppKit();
+  const currentAccount = useCurrentAccount();
+  const currentNetwork = useCurrentNetwork();
   const [session, setSession] = useState<WalletSession | null>(null);
   const walletId = session?.walletId ?? session?.address ?? null;
   const [pendingTx, setPendingTx] = useState<TransactionRequest | null>(null);
   const [pendingBatchTx, setPendingBatchTx] = useState<BatchTransferRequest | null>(null);
   const [pendingNFTTx, setPendingNFTTx] = useState<NFTTransferRequest | null>(null);
+  const [pendingExecutionRequest, setPendingExecutionRequest] = useState<ExecutionRequest | null>(null);
   const [txStatus, setTxStatus] = useState<'idle' | 'signing' | 'success' | 'error'>('idle');
-  const [txDigest, setTxDigest] = useState<string | null>(null);
+  const [quoteClockMs, setQuoteClockMs] = useState(() => Date.now());
 
   const [input, setInput] = useState('');
   const [isCompactLayout, setIsCompactLayout] = useState(false);
@@ -278,6 +590,12 @@ export default function ChatPage() {
     () => sessions.find((item) => item.id === sessionId) ?? null,
     [sessionId, sessions],
   );
+  const pendingExecutionExpiresAtMs = pendingExecutionRequest
+    ? parseQuoteExpiryMs(pendingExecutionRequest.quoteExpiresAt)
+    : 0;
+  const isPendingExecutionExpired =
+    Boolean(pendingExecutionRequest) &&
+    (!pendingExecutionExpiresAtMs || pendingExecutionExpiresAtMs <= quoteClockMs + QUOTE_EXPIRY_SAFETY_MS);
 
   useEffect(() => {
     const syncSession = () => {
@@ -293,6 +611,18 @@ export default function ChatPage() {
       window.removeEventListener('wallet-session-updated', syncSession as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    if (!pendingExecutionRequest) return;
+    setQuoteClockMs(Date.now());
+    const intervalId = window.setInterval(() => {
+      setQuoteClockMs(Date.now());
+    }, 1_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [pendingExecutionRequest]);
 
   useEffect(() => {
     const syncLayout = () => {
@@ -607,16 +937,42 @@ export default function ChatPage() {
         sources: mapToolSources(resolvedResponse.assistantMessage.toolCalls),
       };
 
-      if (resolvedResponse.transactionRequest) {
+      if (resolvedResponse.executionRequest) {
+        const parsedExecutionRequest = parseExecutionRequestPayload(resolvedResponse.executionRequest);
+        if (!parsedExecutionRequest.ok) {
+          setPendingExecutionRequest(null);
+          setPendingTx(null);
+          setPendingBatchTx(null);
+          setPendingNFTTx(null);
+          setTxStatus('error');
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              text: `Quote không hợp lệ theo policy bảo mật (${parsedExecutionRequest.error}). Hãy yêu cầu agent tạo quote mới.`,
+              isAi: true,
+              time: formatDisplayTime(),
+            },
+          ]);
+        } else {
+          setPendingExecutionRequest(parsedExecutionRequest.value);
+          setPendingTx(null);
+          setPendingBatchTx(null);
+          setPendingNFTTx(null);
+          setTxStatus('idle');
+        }
+      } else if (resolvedResponse.transactionRequest) {
         setPendingTx(resolvedResponse.transactionRequest as TransactionRequest);
+        setPendingExecutionRequest(null);
         setTxStatus('idle');
       } else if (resolvedResponse.batchTransferRequest) {
         setPendingBatchTx(resolvedResponse.batchTransferRequest as BatchTransferRequest);
+        setPendingExecutionRequest(null);
         setTxStatus('idle');
       } else if (resolvedResponse.nftTransferRequest) {
         setPendingNFTTx(resolvedResponse.nftTransferRequest as NFTTransferRequest);
+        setPendingExecutionRequest(null);
         setTxStatus('idle');
-        setTxDigest(null);
       }
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -648,6 +1004,9 @@ export default function ChatPage() {
     setChatError(null);
     setFlowSteps([]);
     setPendingTx(null);
+    setPendingBatchTx(null);
+    setPendingNFTTx(null);
+    setPendingExecutionRequest(null);
     setMessages([
       {
         id: 'intro',
@@ -662,11 +1021,133 @@ export default function ChatPage() {
   }
 
   async function handleConfirmTransfer() {
-    if (!pendingTx && !pendingBatchTx && !pendingNFTTx) return;
+    if (!pendingTx && !pendingBatchTx && !pendingNFTTx && !pendingExecutionRequest) return;
     setTxStatus('signing');
 
     try {
       const tx = new Transaction();
+
+      if (pendingExecutionRequest) {
+        const expiresAt = parseQuoteExpiryMs(pendingExecutionRequest.quoteExpiresAt);
+        if (!expiresAt || expiresAt <= Date.now() + QUOTE_EXPIRY_SAFETY_MS) {
+          setPendingExecutionRequest(null);
+          throw new Error('Quote đã hết hạn. Hãy yêu cầu agent tạo quote mới.');
+        }
+
+        const senderAddress = currentAccount?.address;
+        if (!senderAddress) throw new Error('Không tìm thấy địa chỉ ví đang kết nối.');
+        const sessionAddress = session?.address?.toLowerCase();
+        if (sessionAddress && sessionAddress !== senderAddress.toLowerCase()) {
+          setPendingExecutionRequest(null);
+          throw new Error('Ví đang ký không khớp ví đã tạo quote. Hãy connect lại đúng ví rồi yêu cầu agent tạo quote mới.');
+        }
+        if (pendingExecutionRequest.risk.requiresElevatedConfirmation) {
+          const confirmed = window.confirm(
+            pendingExecutionRequest.risk.elevatedReason ??
+              'Yêu cầu xác nhận nâng cao do giao dịch có rủi ro cao hơn bình thường. Bạn có chắc muốn tiếp tục?',
+          );
+          if (!confirmed) {
+            setTxStatus('idle');
+            return;
+          }
+        }
+
+        const targetNetwork = pendingExecutionRequest.network;
+        const supportedChains = currentAccount?.chains ?? [];
+        const requiredChain = `sui:${targetNetwork}`;
+        const supportsRequiredChain = supportedChains.some((chain) => chain === requiredChain);
+        if (supportedChains.length > 0 && !supportsRequiredChain) {
+          setPendingExecutionRequest(null);
+          throw new Error(`Wallet hiện không hỗ trợ chain ${requiredChain}. Hãy chuyển wallet sang mainnet rồi yêu cầu agent tạo quote mới.`);
+        }
+        const dappNetworkBeforeSwitch = dAppKit.stores.$currentNetwork.get();
+        if (dappNetworkBeforeSwitch !== targetNetwork) {
+          dAppKit.switchNetwork(targetNetwork);
+        }
+        const client = dAppKit.getClient(targetNetwork);
+
+        let executionTx: Transaction;
+        try {
+          executionTx = buildExecutionTransaction({
+            request: pendingExecutionRequest,
+            senderAddress,
+          });
+        } catch {
+          setPendingExecutionRequest(null);
+          throw new Error('Transaction data không hợp lệ. Hãy yêu cầu agent tạo quote mới.');
+        }
+        let executionTxJson: string;
+        const coinClient = client as SuiCoinListClient;
+        try {
+          executionTxJson = await materializeExecutionTransactionJson({
+            tx: executionTx,
+            senderAddress,
+            gasBudgetMist: pendingExecutionRequest.risk.gasEstimateMist,
+            client: coinClient,
+          });
+        } catch (error) {
+          if (!isGasCoinSeparationError(error) && !isInsufficientGasForBudgetError(error)) {
+            setPendingExecutionRequest(null);
+            throw error;
+          }
+          const didSplitGasCoin = await autoSplitSuiForGasCoin({
+            tx: executionTx,
+            senderAddress,
+            client: coinClient,
+            requiredGasBudgetMist: parseMistAmount(pendingExecutionRequest.risk.gasEstimateMist),
+            executeTransaction: (params) => dAppKit.signAndExecuteTransaction(params),
+          });
+          if (didSplitGasCoin) {
+            setPendingExecutionRequest(null);
+            throw new Error(
+              'Đã tách thêm 1 gas coin SUI cho ví. Hãy yêu cầu agent tạo quote mới rồi xác nhận giao dịch lại.',
+            );
+          }
+          setPendingExecutionRequest(null);
+          throw error;
+        }
+
+        console.info('[swap-execution] using backend-built transaction payload', {
+          network: pendingExecutionRequest.network,
+          dappNetwork: dAppKit.stores.$currentNetwork.get(),
+          accountNetwork: currentNetwork,
+          routeSteps: pendingExecutionRequest.preview.route?.length ?? 0,
+          gasBudgetMist: pendingExecutionRequest.risk.gasEstimateMist,
+        });
+        const result = await dAppKit.signAndExecuteTransaction({
+          transaction: executionTxJson,
+        });
+        console.info('[swap-execution] transaction submitted', {
+          kind: result.$kind,
+          digest: result.$kind === 'Transaction' ? result.Transaction.digest : result.FailedTransaction.digest,
+          success: result.$kind === 'Transaction',
+        });
+
+        if (result.$kind === 'FailedTransaction') {
+          const statusError = result.FailedTransaction.status.error;
+          const errorMessage =
+            typeof statusError === 'string'
+              ? statusError
+              : statusError?.message ?? 'Giao dịch bị từ chối trên chain.';
+          throw new Error(errorMessage);
+        }
+
+        setTxStatus('success');
+        setPendingTx(null);
+        setPendingBatchTx(null);
+        setPendingNFTTx(null);
+        setPendingExecutionRequest(null);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            text: `Giao dịch thành công!\nDigest: \`${result.Transaction.digest ?? 'submitted'}\``,
+            isAi: true,
+            time: formatDisplayTime(),
+          },
+        ]);
+        return;
+      }
 
       // Handle regular transfer
       if (pendingTx) {
@@ -677,8 +1158,7 @@ export default function ChatPage() {
       // Handle batch transfer using PTB (Programmable Transaction Block)
       if (pendingBatchTx) {
         // Split gas coin into multiple coins for each recipient
-        for (let i = 0; i < pendingBatchTx.recipients.length; i++) {
-          const recipient = pendingBatchTx.recipients[i];
+        for (const recipient of pendingBatchTx.recipients) {
           const [coin] = tx.splitCoins(tx.gas, [BigInt(recipient.amountMist)]);
           tx.transferObjects([coin], recipient.address);
         }
@@ -694,10 +1174,10 @@ export default function ChatPage() {
         result.$kind === 'Transaction' ? (result.Transaction as unknown as Record<string, unknown>).digest as string | undefined : undefined;
 
       setTxStatus('success');
-      setTxDigest(digest ?? 'submitted');
       setPendingTx(null);
       setPendingBatchTx(null);
       setPendingNFTTx(null);
+      setPendingExecutionRequest(null);
       setMessages((prev) => [
         ...prev,
         {
@@ -709,11 +1189,13 @@ export default function ChatPage() {
       ]);
     } catch (error) {
       setTxStatus('error');
+      console.error('[swap-execution] transaction failed', error);
+      const errorMessage = normalizeExecutionError(error);
       setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
-          text: `Giao dịch thất bại: ${error instanceof Error ? error.message : String(error)}`,
+          text: `Giao dịch thất bại: ${errorMessage}`,
           isAi: true,
           time: formatDisplayTime(),
         },
@@ -1174,7 +1656,7 @@ export default function ChatPage() {
               </>
             )}
 
-            {(pendingTx || pendingBatchTx || pendingNFTTx) && txStatus !== 'success' && (
+            {(pendingTx || pendingBatchTx || pendingNFTTx || pendingExecutionRequest) && txStatus !== 'success' && (
               <div
                 style={{
                   margin: '8px 0',
@@ -1190,13 +1672,20 @@ export default function ChatPage() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--matcha-accent)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                    {pendingBatchTx ? 'Batch Transfer' : pendingNFTTx ? 'NFT Transfer' : 'Xác nhận giao dịch'}
+                    {pendingExecutionRequest
+                      ? pendingExecutionRequest.preview.actionLabel
+                      : pendingBatchTx
+                        ? 'Batch Transfer'
+                        : pendingNFTTx
+                          ? 'NFT Transfer'
+                          : 'Xác nhận giao dịch'}
                   </span>
                   <button
                     onClick={() => {
                       setPendingTx(null);
                       setPendingBatchTx(null);
                       setPendingNFTTx(null);
+                      setPendingExecutionRequest(null);
                     }}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px' }}
                   >
@@ -1274,6 +1763,135 @@ export default function ChatPage() {
                       </div>
                     </>
                   )}
+
+                  {pendingExecutionRequest && (
+                    <>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                          {pendingExecutionRequest.summary.title}
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                          {pendingExecutionRequest.summary.detail}
+                        </div>
+                      </div>
+
+                      {pendingExecutionRequest.preview.market && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Market</span>
+                          <span style={{ color: 'var(--text-primary)' }}>{pendingExecutionRequest.preview.market}</span>
+                        </div>
+                      )}
+                      {pendingExecutionRequest.preview.amountIn && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Input</span>
+                          <span style={{ color: 'var(--text-primary)' }}>{pendingExecutionRequest.preview.amountIn}</span>
+                        </div>
+                      )}
+                      {pendingExecutionRequest.preview.expectedAmountOut && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Expected output</span>
+                          <span style={{ color: 'var(--text-primary)', textAlign: 'right' }}>{pendingExecutionRequest.preview.expectedAmountOut}</span>
+                        </div>
+                      )}
+                      {pendingExecutionRequest.preview.quantity && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Quantity</span>
+                          <span style={{ color: 'var(--text-primary)' }}>{pendingExecutionRequest.preview.quantity}</span>
+                        </div>
+                      )}
+                      {pendingExecutionRequest.preview.price && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Price</span>
+                          <span style={{ color: 'var(--text-primary)' }}>{pendingExecutionRequest.preview.price}</span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Slippage max</span>
+                        <span style={{ color: 'var(--text-primary)' }}>{pendingExecutionRequest.preview.slippagePct}%</span>
+                      </div>
+                      {typeof pendingExecutionRequest.risk.securityChecks?.priceImpactPct === 'number' && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Price impact</span>
+                          <span style={{ color: 'var(--text-primary)' }}>
+                            {pendingExecutionRequest.risk.securityChecks.priceImpactPct.toFixed(2)}%
+                          </span>
+                        </div>
+                      )}
+                      {typeof pendingExecutionRequest.risk.securityChecks?.complexityScore === 'number' && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Complexity score</span>
+                          <span style={{ color: 'var(--text-primary)' }}>
+                            {pendingExecutionRequest.risk.securityChecks.complexityScore}
+                          </span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Quote expires</span>
+                        <span style={{ color: isPendingExecutionExpired ? '#B85C5C' : 'var(--text-primary)', fontWeight: 700 }}>
+                          {isPendingExecutionExpired ? 'Đã hết hạn' : formatDisplayTime(pendingExecutionRequest.quoteExpiresAt)}
+                        </span>
+                      </div>
+                      {pendingExecutionRequest.preview.route && pendingExecutionRequest.preview.route.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.82rem' }}>Route</span>
+                          {pendingExecutionRequest.preview.route.map((step, index) => (
+                            <span key={`${step}-${index}`} style={{ fontSize: '0.75rem', color: 'var(--text-primary)' }}>
+                              {step}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {pendingExecutionRequest.preview.allocations && pendingExecutionRequest.preview.allocations.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.82rem' }}>Target allocation</span>
+                          {pendingExecutionRequest.preview.allocations.map((allocation) => (
+                            <span key={allocation.symbol} style={{ fontSize: '0.75rem', color: 'var(--text-primary)' }}>
+                              {allocation.symbol}: {allocation.currentPct?.toFixed(1) ?? '0.0'}% → {allocation.targetPct.toFixed(1)}%
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {pendingExecutionRequest.risk.gasEstimateMist && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Gas estimate</span>
+                          <span style={{ color: 'var(--text-primary)' }}>{Number(pendingExecutionRequest.risk.gasEstimateMist) / 1_000_000_000} SUI</span>
+                        </div>
+                      )}
+                      {pendingExecutionRequest.risk.touchedProtocols.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.82rem' }}>Touched protocols</span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-primary)' }}>
+                            {pendingExecutionRequest.risk.touchedProtocols.join(', ')}
+                          </span>
+                        </div>
+                      )}
+                      {pendingExecutionRequest.risk.warnings.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ color: '#B85C5C', fontWeight: 700, fontSize: '0.82rem' }}>Warnings</span>
+                          {pendingExecutionRequest.risk.warnings.map((warning, index) => (
+                            <span key={`${warning}-${index}`} style={{ fontSize: '0.75rem', color: '#B85C5C', lineHeight: 1.45 }}>
+                              {warning}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {pendingExecutionRequest.risk.rejectCode && (
+                        <div style={{ fontSize: '0.75rem', color: '#B85C5C', fontWeight: 700 }}>
+                          Reject code: {pendingExecutionRequest.risk.rejectCode}
+                        </div>
+                      )}
+                      {pendingExecutionRequest.risk.requiresElevatedConfirmation && pendingExecutionRequest.risk.elevatedReason && (
+                        <div style={{ fontSize: '0.78rem', color: '#7B5A00', fontWeight: 700, lineHeight: 1.45 }}>
+                          {pendingExecutionRequest.risk.elevatedReason}
+                        </div>
+                      )}
+                      {isPendingExecutionExpired && (
+                        <div style={{ fontSize: '0.78rem', color: '#B85C5C', fontWeight: 700, lineHeight: 1.45 }}>
+                          Quote này không còn an toàn để ký. Hãy yêu cầu agent tạo quote mới.
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 {txStatus === 'error' && (
@@ -1285,13 +1903,18 @@ export default function ChatPage() {
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <ClayButton
                     onClick={() => void handleConfirmTransfer()}
-                    disabled={txStatus === 'signing'}
+                    disabled={txStatus === 'signing' || isPendingExecutionExpired}
                     style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                   >
                     {txStatus === 'signing' ? (
                       <><Loader2 size={14} className="spinning-loader" /> Đang ký...</>
+                    ) : isPendingExecutionExpired ? (
+                      <>Quote hết hạn</>
                     ) : (
-                      <><SendHorizonal size={14} /> Xác nhận & Gửi</>
+                      <>
+                        <SendHorizonal size={14} />{' '}
+                        {pendingExecutionRequest?.risk.requiresElevatedConfirmation ? 'Xác nhận nâng cao & Gửi' : 'Xác nhận & Gửi'}
+                      </>
                     )}
                   </ClayButton>
                   <button
@@ -1299,6 +1922,7 @@ export default function ChatPage() {
                       setPendingTx(null);
                       setPendingBatchTx(null);
                       setPendingNFTTx(null);
+                      setPendingExecutionRequest(null);
                     }}
                     disabled={txStatus === 'signing'}
                     style={{

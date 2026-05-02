@@ -166,13 +166,13 @@ export class LangGraphToolRegistry {
     if (intent === 'fee') {
       nextAgents.add('gas');
     }
-    if (/(balance|holding|portfolio|allocation|value|asset|token|pnl)/i.test(normalizedQuestion)) {
+    if (/(balance|holding|portfolio|allocation|value|asset|token|pnl|swap|rebalance|route|liquidity)/i.test(normalizedQuestion)) {
       nextAgents.add('portfolio');
     }
-    if (/(gas|fee|cost|cheap|expensive)/i.test(normalizedQuestion)) {
+    if (/(gas|fee|cost|cheap|expensive|slippage|price impact|orderbook|spread)/i.test(normalizedQuestion)) {
       nextAgents.add('gas');
     }
-    if (/(research|project|tokenomics|news|sentiment|tvl|whale|competitor|compare|comparison|outlook|roadmap|whitepaper|fundamentals|supply|total supply|circulating supply|max supply|walrus)/i.test(normalizedQuestion)) {
+    if (/(research|project|tokenomics|news|sentiment|tvl|whale|competitor|compare|comparison|outlook|roadmap|whitepaper|fundamentals|supply|total supply|circulating supply|max supply|walrus|deepbook|cetus)/i.test(normalizedQuestion)) {
       nextAgents.add('research');
     }
     if (intent === 'staking' || /(stake|staking|reward|apy|unstake)/i.test(normalizedQuestion)) {

@@ -11,8 +11,10 @@
     "seed:dev": "ts-node --project tsconfig.json --require tsconfig-paths/register src/database/seeds/dev.seed.ts"
   },
   "dependencies": {
+    "@cetusprotocol/aggregator-sdk": "^1.1.5",
     "@langchain/core": "^0.3.66",
     "@langchain/langgraph": "^0.2.74",
+    "@mysten/deepbook": "^0.9.0",
     "@mysten-incubation/memwal": "latest",
     "@mysten/sui": "^2.16.0",
     "@nestjs/common": "^11.0.3",

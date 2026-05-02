@@ -106,7 +106,7 @@ export class DataService {
       dateField?: string;
     },
   ): Promise<PaginationResult<Record<string, unknown>>> {
-    const targetNetwork = input.network ?? 'testnet';
+    const targetNetwork = input.network ?? backendEnv.network;
     const model = this.databaseService.getModel<Record<string, unknown>>(modelName);
     if (!model) {
       return this.buildRpcFallbackResult(modelName, { ...input, network: targetNetwork }, options);
@@ -148,11 +148,32 @@ export class DataService {
       model.countDocuments(filter),
     ]);
 
-    if (total === 0 && targetNetwork === 'testnet') {
+    if (total === 0) {
       this.logger.warn(
         `No ${modelName} rows for wallet=${input.walletAddress} network=${targetNetwork}; falling back to RPC sync.`,
       );
       return this.buildRpcFallbackResult(modelName, { ...input, network: targetNetwork }, options);
+    }
+
+    if (
+      modelName === 'ObjectPosition' &&
+      input.network &&
+      items.some((item) => !item.display)
+    ) {
+      const snapshot = await this.suiIngestionService.syncWallet(input.walletAddress, input.network, {
+        limit: Math.max(input.pagination.limit, backendEnv.sui.pageSize),
+      });
+      const displayByObjectId = new Map(
+        snapshot.objects
+          .filter((object) => object.objectId)
+          .map((object) => [object.objectId, object.display ?? null] as const),
+      );
+      const enrichedItems = items.map((item) => {
+        const objectId = String(item.objectId ?? '');
+        const display = displayByObjectId.get(objectId);
+        return display ? { ...item, display } : item;
+      });
+      return buildPaginationResult(enrichedItems, total, input.pagination);
     }
 
     return buildPaginationResult(items, total, input.pagination);

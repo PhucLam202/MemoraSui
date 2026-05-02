@@ -2,12 +2,13 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useCurrentAccount } from '@mysten/dapp-kit-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { StatCard } from '@/components/modules/dashboard/StatCard';
 import { AssetList } from '@/components/modules/dashboard/AssetList';
 import { WalletConnectGate } from '@/components/modules/dashboard/WalletConnectGate';
 import { ClayCard } from '@/components/shared/ClayCard';
-import { fetchApi, formatTokenAmount, formatUsd } from '@/lib/api-client';
+import { fetchApi, postApi, formatTokenAmount, formatUsd } from '@/lib/api-client';
 import { loadWalletSessionFromStorage } from '@/lib/wallet-session';
 import { 
   History, 
@@ -18,7 +19,8 @@ import {
   Wallet, 
   ShieldCheck, 
   ChevronRight,
-  Clock
+  Clock,
+  RefreshCw
 } from 'lucide-react';
 
 type PortfolioSummary = {
@@ -45,29 +47,16 @@ type Snapshot = {
 };
 
 export default function DashboardPage() {
+  const currentAccount = useCurrentAccount();
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
   const [activity, setActivity] = useState<ActivitySummary | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [walletSession, setWalletSession] = useState(() => loadWalletSessionFromStorage());
 
-  const walletAddress = walletSession?.address ?? null;
-  const networkName = 'testnet';
-
-  useEffect(() => {
-    const syncSession = () => {
-      setWalletSession(loadWalletSessionFromStorage());
-    };
-
-    syncSession();
-    window.addEventListener('storage', syncSession);
-    window.addEventListener('wallet-session-updated', syncSession as EventListener);
-    return () => {
-      window.removeEventListener('storage', syncSession);
-      window.removeEventListener('wallet-session-updated', syncSession as EventListener);
-    };
-  }, []);
+  const walletAddress = currentAccount?.address ?? loadWalletSessionFromStorage()?.address ?? null;
+  const networkName = (process.env.NEXT_PUBLIC_SUI_NETWORK as string) || 'mainnet';
 
   useEffect(() => {
     async function load() {
@@ -100,6 +89,28 @@ export default function DashboardPage() {
     void load();
   }, [walletAddress, networkName]);
 
+  async function handleSync() {
+    if (!walletAddress || syncing) return;
+    setSyncing(true);
+    setError(null);
+    try {
+      await postApi(`/sync/wallet-addresses/${walletAddress}`, {});
+      // Reload dashboard data after sync
+      const [portfolioData, activityData, snapshotData] = await Promise.all([
+        fetchApi<PortfolioSummary>(`/analytics/wallets/${walletAddress}/portfolio`, { network: networkName }),
+        fetchApi<ActivitySummary>(`/analytics/wallets/${walletAddress}/activity`, { network: networkName }),
+        fetchApi<Snapshot>(`/analytics/wallets/${walletAddress}/snapshot`, { network: networkName }),
+      ]);
+      setPortfolio(portfolioData);
+      setActivity(activityData);
+      setSnapshot(snapshotData);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Sync failed.');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   const topAssets = useMemo(
     () =>
       (portfolio?.topAssets ?? []).slice(0, 8).map((asset) => ({
@@ -122,12 +133,31 @@ export default function DashboardPage() {
                 Your portfolio is looking healthy on <span style={{ color: 'var(--matcha-accent)', fontWeight: 700 }}>{networkName}</span>.
               </p>
             </div>
-            {snapshot?.generatedAt && (
-              <div className="sync-badge">
-                <Clock size={14} />
-                <span>Synced {new Date(snapshot.generatedAt).toLocaleTimeString()}</span>
-              </div>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {snapshot?.generatedAt && (
+                <div className="sync-badge">
+                  <Clock size={14} />
+                  <span>Synced {new Date(snapshot.generatedAt).toLocaleTimeString()}</span>
+                </div>
+              )}
+              {walletAddress && (
+                <button
+                  onClick={() => void handleSync()}
+                  disabled={syncing}
+                  title="Re-sync wallet data from chain"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 16px', borderRadius: '12px', border: 'none', cursor: syncing ? 'not-allowed' : 'pointer',
+                    background: 'var(--white)', boxShadow: 'var(--shadow-outer)',
+                    color: 'var(--matcha-accent)', fontWeight: 600, fontSize: '0.82rem',
+                    opacity: syncing ? 0.6 : 1, transition: 'var(--transition-fast)',
+                  }}
+                >
+                  <RefreshCw size={14} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} />
+                  {syncing ? 'Syncing…' : 'Refresh'}
+                </button>
+              )}
+            </div>
           </header>
 
           {error && (
@@ -259,6 +289,11 @@ export default function DashboardPage() {
           grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
           gap: var(--spacing-md);
           align-items: start;
+        }
+
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
 
         .sync-badge {

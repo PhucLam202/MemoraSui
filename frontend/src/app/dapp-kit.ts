@@ -10,14 +10,14 @@ const GRPC_URLS: Record<SuiNetwork, string> = {
   mainnet: 'https://fullnode.mainnet.sui.io:443',
 };
 
-const defaultNetwork: SuiNetwork = 'testnet';
+const configuredNetwork = (process.env.NEXT_PUBLIC_SUI_NETWORK as SuiNetwork) || 'mainnet';
 
 export const dAppKit = createDAppKit({
-  networks: ['testnet'],
-  defaultNetwork,
-  autoConnect: false,
+  networks: ['mainnet', 'testnet', 'devnet'],
+  defaultNetwork: configuredNetwork,
+  autoConnect: true,
   storageKey: 'sui-portfolio:dapp-kit',
-  slushWalletConfig: null,
+  slushWalletConfig: { appName: process.env.NEXT_PUBLIC_APP_NAME || 'memoraSui' },
   createClient: (network) =>
     new SuiGrpcClient({
       network,
